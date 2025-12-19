@@ -1,0 +1,600 @@
+animal.ID,T/C Ratio,CAA Estimate,Result,age.years,age.class,Sex,Section,BCS.Average
+1,0.021,35,positive,4.5,Subadult,Female,Malelane,4
+2,0.067,162,positive,1,Calf,Male,Malelane,3.75
+3,0.213,559,positive,1,Calf,Male,Malelane,4
+4,0.065,157,positive,1,Subadult,Male,Malelane,3.5
+5,0.045,104,positive,4.5,Subadult,Female,Skukuza,4
+6,0.014,17,negative,1,Subadult,Female,Skukuza,4
+7,1.29,3430,positive,2.5,Subadult,Female,Skukuza,4.5
+8,0.01,7,negative,2,Subadult,Female,Skukuza,4
+9,0.05,115,positive,9.8,Adult,Female,Skukuza,3
+10,0.008,1,negative,10.5,Adult,Female,Skukuza,4
+11,0.018,28,negative,1.5,Subadult,Male,Skukuza,3.5
+12,3.557,9396,positive,1.5,Subadult,Male,Skukuza,4.5
+13,0.993,2644,positive,1.5,Subadult,Female,Skukuza,4.25
+14,0.053,124,positive,1.5,Subadult,Female,Crocodile Bridge,3.25
+15,0.005,NA,negative,13.1,Adult,Female,Crocodile Bridge,4
+16,0.013,13,negative,9.6,Oldadult,Female,Crocodile Bridge,4.25
+17,0.045,102,positive,1.5,Subadult,Male,Crocodile Bridge,4
+18,0.007,NA,negative,1.5,Subadult,Female,Crocodile Bridge,4.25
+19,0.008,1,negative,2.5,Subadult,Male,Crocodile Bridge,4.25
+20,0.015,19,negative,2,Subadult,Female,Crocodile Bridge,4.5
+21,0.017,26,negative,2,Subadult,Male,Crocodile Bridge,4
+22,0.004,NA,negative,1.5,Subadult,Male,Crocodile Bridge,4.5
+23,0.008,NA,negative,4.5,Subadult,Female,Crocodile Bridge,4
+24,0.019,31,positive,5.5,Subadult,Female,Crocodile Bridge,4
+25,0.009,3,negative,10.2,Adult,Female,Crocodile Bridge,4.75
+26,0.008,NA,negative,1,Calf,Female,Crocodile Bridge,3.5
+27,0.007,NA,negative,1.25,Subadult,Female,Crocodile Bridge,3.75
+28,0.242,636,positive,2,Subadult,Female,Crocodile Bridge,3.75
+29,0.008,1,negative,2,Subadult,Male,Crocodile Bridge,3.5
+30,0.064,153,positive,1.5,Subadult,Female,Crocodile Bridge,4.25
+31,0.033,69,positive,1.25,Subadult,Male,Crocodile Bridge,3.75
+32,0.092,230,positive,3.5,Subadult,Female,Crocodile Bridge,4.5
+34,6.672,17533,positive,8.2,Adult,Female,Crocodile Bridge,4.25
+35,0.01,6,negative,2,Subadult,Female,Crocodile Bridge,4.25
+36,0.012,11,negative,1,Calf,Male,Crocodile Bridge,3.25
+37,0.65,1730,positive,1.25,Subadult,Male,Crocodile Bridge,3.5
+38,0.016,24,negative,1.5,Subadult,Male,Crocodile Bridge,3.75
+39,0.009,2,negative,1.25,Subadult,Female,Crocodile Bridge,4.25
+40,0.009,4,negative,2,Subadult,Male,Crocodile Bridge,3.75
+41,0.008,0,negative,3.5,Subadult,Female,Lower Sabie,4.25
+42,0.009,3,negative,3,Subadult,Female,Lower Sabie,4.25
+43,0.029,59,positive,8,Adult,Female,Lower Sabie,4.25
+44,0.01,6,negative,4.5,Adult,Female,Lower Sabie,4
+45,0.009,2,negative,1,Calf,Female,Lower Sabie,4
+46,0.017,25,negative,1.25,Calf,Male,Lower Sabie,3.5
+47,0.012,12,negative,1,Calf,Female,Lower Sabie,4.25
+48,0.009,2,negative,1.5,Subadult,Female,Lower Sabie,4.75
+49,0.01,7,negative,2.5,Subadult,Female,Lower Sabie,4.25
+50,0.009,4,negative,1.5,Calf,Female,Lower Sabie,4
+51,0.019,30,negative,1,Calf,Female,Lower Sabie,4.25
+52,0.012,11,negative,1.5,Subadult,Male,Lower Sabie,4.25
+53,0.239,630,positive,1,Subadult,Male,Lower Sabie,3.75
+54,0.041,92,positive,8.2,Adult,Female,Lower Sabie,4.25
+55,0.112,285,positive,11.1,Adult,Female,Lower Sabie,4
+56,0.057,135,positive,4.5,Adult,Female,Lower Sabie,4.25
+57,6.303,16570,positive,1,Calf,Female,Lower Sabie,4
+58,0.008,NA,negative,1,Subadult,Female,Lower Sabie,4
+59,0.016,23,negative,14,Adult,Female,Lower Sabie,4.25
+60,0.014,18,negative,5.5,Adult,Female,Lower Sabie,3.5
+61,0.009,3,negative,13.5,Adult,Female,Lower Sabie,4.25
+62,0.008,1,negative,1.5,Subadult,Female,Lower Sabie,3.75
+63,0.025,47,positive,NA,NA,NA,NA,NA
+64,0.013,14,negative,7.8,Adult,Female,Lower Sabie,4.75
+65,0.008,NA,negative,4.5,Subadult,Female,Lower Sabie,4.25
+66,0.013,15,negative,7.2,Adult,Female,Lower Sabie,4.75
+67,0.01,7,negative,13.9,Adult,Female,Lower Sabie,3.5
+68,0.011,9,negative,5.7,Adult,Female,Lower Sabie,4.5
+69,0.017,25,negative,4.5,Adult,Female,Lower Sabie,4.25
+70,0.016,22,negative,NA,NA,NA,NA,NA
+71,0.008,1,negative,1.25,Subadult,Male,Lower Sabie,3.5
+72,0.009,4,negative,NA,NA,NA,NA,NA
+73,0.006,NA,negative,1.25,Subadult,Male,Lower Sabie,3.25
+74,0.008,1,negative,2,Subadult,Female,Tshokwane,3.75
+75,0.011,9,negative,1,Calf,Male,Tshokwane,4.25
+76,0.012,12,negative,1,Calf,Male,Tshokwane,3.75
+77,0.006,NA,negative,1.5,Subadult,Male,Tshokwane,4
+78,0.008,NA,negative,1,Calf,Female,Tshokwane,3.75
+79,0.008,NA,negative,8.5,Adult,Female,Tshokwane,3.5
+80,0.016,22,negative,5.9,Adult,Female,Tshokwane,4.25
+81,0.027,53,positive,9.9,Adult,Female,Tshokwane,4.75
+82,0.02,33,positive,12.6,Adult,Female,Tshokwane,4.5
+83,0.01,5,negative,1.5,Subadult,Male,Pretoriuskop,3.75
+84,0.009,2,negative,1.25,Subadult,Female,Pretoriuskop,4.5
+85,0.017,26,negative,2,Subadult,Male,Pretoriuskop,4
+86,0.516,1372,positive,2.5,Subadult,Female,Pretoriuskop,4.5
+87,0.007,NA,negative,1.5,Subadult,Female,Pretoriuskop,4.25
+88,0.007,NA,negative,2,Subadult,Female,Pretoriuskop,4.25
+89,0.014,18,negative,1.25,Subadult,Male,Pretoriuskop,3.25
+90,0.009,2,negative,1,Calf,Female,Pretoriuskop,3
+91,0.007,NA,negative,1.5,Subadult,Male,Pretoriuskop,3.5
+92,0.034,66,positive,1,Calf,Male,Pretoriuskop,3.75
+93,0.103,224,positive,1,Calf,Male,Pretoriuskop,4.25
+94,0.024,38,positive,4,Subadult,Female,Pretoriuskop,4
+95,0.036,71,positive,1.25,Subadult,Male,Pretoriuskop,4.25
+96,0.011,NA,negative,1,Calf,Male,Pretoriuskop,3.75
+97,0.007,NA,negative,1,Calf,Female,Pretoriuskop,4.25
+98,0.008,NA,negative,0.67,Calf,Female,Pretoriuskop,4.25
+99,0.402,856,positive,1,Calf,Female,Pretoriuskop,4
+100,0.035,67,positive,2,Subadult,Male,Skukuza,4
+101,0.015,13,negative,15,Adult,Female,Skukuza,4.5
+102,0.146,317,positive,7.6,Adult,Female,Skukuza,4.25
+103,0.045,92,positive,2,Subadult,Male,Skukuza,3.5
+104,0.058,122,positive,1,Calf,Female,Skukuza,4.25
+105,0.395,840,positive,2.5,Subadult,Female,Skukuza,4.25
+106,0.065,139,positive,16.9,Oldadult,Female,Skukuza,3
+107,2.635,11612,positive,1.75,Subadult,Male,Skukuza,4.25
+108,0.017,20,negative,1,Calf,Male,Skukuza,3.5
+109,0.24,516,positive,2,Subadult,Female,Skukuza,4.25
+110,0.016,14,negative,2.5,Subadult,Female,Skukuza,3.75
+111,0.027,45,positive,1.5,Subadult,Female,Skukuza,4
+112,0.008,NA,negative,2,Subadult,Female,Skukuza,3.25
+113,0.011,NA,negative,1.5,Subadult,Male,Skukuza,4.75
+114,0.042,85,positive,1.5,Subadult,Female,Skukuza,4.75
+115,1.73,4819,positive,1.25,Calf,Male,Skukuza,4.25
+116,0.021,31,positive,1.25,Subadult,Female,Skukuza,4.5
+117,0.01,NA,negative,1,Calf,Male,Skukuza,3.75
+118,0.015,11,negative,2.25,Subadult,Female,Skukuza,4.25
+119,0.016,16,negative,1,Calf,Male,Skukuza,4
+120,0.102,223,positive,1,Calf,Male,Skukuza,4.5
+121,1.864,5458,positive,0.66,Calf,Female,Skukuza,4.25
+122,0.014,8,negative,3.5,Subadult,Female,Crocodile Bridge,4.75
+123,0.01,NA,negative,1.25,Subadult,Male,Crocodile Bridge,3.75
+124,0.01,NA,negative,0.83,Calf,Male,Crocodile Bridge,3.75
+125,0.024,40,positive,1,Calf,Female,Crocodile Bridge,3.25
+126,0.008,NA,negative,9.5,Adult,Male,Crocodile Bridge,5
+127,0.021,32,positive,1.25,Subadult,Female,Crocodile Bridge,4
+128,0.016,14,negative,1.25,Subadult,Male,Crocodile Bridge,3.25
+129,0.012,3,negative,1.75,Subadult,Male,Crocodile Bridge,3.5
+130,0.047,98,positive,1.25,Subadult,Female,Crocodile Bridge,4
+131,0.011,NA,negative,1.25,Subadult,Female,Crocodile Bridge,3.75
+132,0.017,20,negative,1,Calf,Male,Crocodile Bridge,4
+133,0.012,2,negative,0.83,Calf,Female,Crocodile Bridge,2.75
+134,0.019,24,negative,2.5,Subadult,Female,Crocodile Bridge,4.5
+135,0.012,NA,negative,8.9,Adult,Female,Crocodile Bridge,4.25
+136,0.013,4,negative,1,Calf,Female,Crocodile Bridge,4
+137,0.014,10,negative,1,Calf,Female,Crocodile Bridge,3.25
+138,0.013,6,negative,1,Calf,Male,Crocodile Bridge,3.5
+139,0.013,6,negative,1,Calf,Male,Crocodile Bridge,3
+140,0.007,NA,negative,3.5,Adult,Female,Crocodile Bridge,4.5
+141,0.014,9,negative,7.8,Adult,Female,Lower Sabie,4.5
+142,0.014,8,negative,8.2,Adult,Female,Lower Sabie,4.25
+143,0.013,4,negative,5.9,Adult,Female,Lower Sabie,4.5
+144,0.01,NA,negative,2,Subadult,Male,Lower Sabie,4
+145,0.011,NA,negative,1.25,Subadult,Female,Lower Sabie,4
+146,0.012,1,negative,5.9,Adult,Female,Lower Sabie,4.5
+147,0.004,NA,negative,9.3,Adult,Female,Lower Sabie,4.5
+148,0.025,42,positive,NA,NA,NA,NA,NA
+149,0.01,NA,negative,8.5,Adult,Female,Lower Sabie,4.25
+150,0.012,3,negative,2.5,Subadult,Male,Lower Sabie,4
+151,0.036,71,positive,1,Calf,Male,Lower Sabie,4
+152,0.01,NA,negative,1,Calf,Female,Lower Sabie,4.25
+153,0.009,NA,negative,10.2,Adult,Female,Lower Sabie,4.75
+154,0.048,100,positive,1.5,Subadult,Female,Tshokwane,4.25
+155,0.009,NA,negative,1.25,Subadult,Male,Tshokwane,4
+156,0.015,13,negative,1.25,Subadult,Male,Tshokwane,3.5
+157,0.015,12,negative,1,Calf,Male,Tshokwane,3.5
+158,0.031,56,positive,7.1,Adult,Female,Crocodile Bridge,4.75
+159,0.022,32,positive,20,Oldadult,Female,Crocodile Bridge,4
+160,0.017,19,negative,2.5,Subadult,Female,Crocodile Bridge,4.5
+161,0.014,9,negative,2.5,Subadult,Female,Crocodile Bridge,4.5
+162,0.015,13,negative,0.83,Calf,Female,Crocodile Bridge,4.25
+163,0.009,NA,negative,1.75,Subadult,Female,Crocodile Bridge,4.5
+164,0.008,NA,negative,4,Subadult,Female,Crocodile Bridge,4.25
+165,0.014,10,negative,5.3,Adult,Female,Crocodile Bridge,4.75
+166,0.022,34,positive,9.5,Adult,Female,Crocodile Bridge,5
+167,0.009,NA,negative,1.25,Subadult,Male,Crocodile Bridge,4.25
+168,0.006,NA,negative,1.25,Subadult,Male,Crocodile Bridge,4.75
+169,0.097,211,positive,1,Calf,Female,Crocodile Bridge,4
+170,0.011,NA,negative,7.5,Adult,Female,Crocodile Bridge,4.25
+171,0.012,3,negative,8.7,Adult,Female,Crocodile Bridge,4.75
+172,0.016,15,negative,1.5,Subadult,Male,Crocodile Bridge,3.75
+173,0.008,NA,negative,1.75,Subadult,Female,Crocodile Bridge,3.5
+174,0.007,NA,negative,11.6,Adult,Female,Satara,4.25
+175,0.013,4,negative,4.5,Adult,Female,Satara,5
+176,0.007,NA,negative,1.5,Subadult,Male,Satara,4.25
+177,0.014,8,negative,1,Subadult,Male,Satara,4
+178,0.008,NA,negative,1,Calf,Male,Satara,4.25
+179,0.009,NA,negative,4.5,Calf,Female,Satara,4.25
+180,0.009,NA,negative,1.5,Adult,Female,Satara,3.75
+181,0.008,NA,negative,1.25,Subadult,Female,Satara,4.25
+182,0.014,23,negative,1,Calf,Female,Satara,4
+183,0.32,786,positive,1.25,Subadult,Male,Satara,3.75
+185,0.005,NA,negative,9.7,Adult,Female,Kingfisher Spruit,4.5
+186,0.01,1,negative,4.5,Adult,Female,Kingfisher Spruit,4.25
+187,0.018,38,positive,2.5,Subadult,Female,Kingfisher Spruit,4.25
+188,0.041,116,positive,1.5,Subadult,Female,Kingfisher Spruit,4.5
+189,0.007,NA,negative,1,Calf,Female,Kingfisher Spruit,4
+190,0.018,37,positive,1,Calf,Female,Kingfisher Spruit,4.25
+191,0.008,NA,negative,6,Adult,Female,Kingfisher Spruit,3.75
+192,0.008,NA,negative,1,Calf,Female,Kingfisher Spruit,3.75
+193,0.01,NA,negative,1,Calf,Female,Kingfisher Spruit,4
+194,0.01,0,negative,1.25,Subadult,Female,Kingfisher Spruit,4.25
+195,0.009,NA,negative,1.25,Subadult,Female,Kingfisher Spruit,4.25
+196,0.023,57,positive,5.5,Adult,Female,Kingfisher Spruit,4.25
+197,0.012,14,negative,6.3,Adult,Female,Kingfisher Spruit,4
+198,0.013,19,negative,7.7,Adult,Female,Kingfisher Spruit,4.5
+199,0.011,7,negative,1.75,Subadult,Male,Kingfisher Spruit,4.25
+200,0.249,625,positive,1.75,Subadult,Male,Kingfisher Spruit,4.25
+201,0.009,NA,negative,1,Calf,Male,Kingfisher Spruit,3.75
+202,0.005,NA,negative,1.25,Subadult,Female,Kingfisher Spruit,4.25
+203,0.012,12,negative,1.5,Subadult,Male,Kingfisher Spruit,4
+204,0.04,112,positive,1.5,Subadult,Female,Kingfisher Spruit,4
+205,0.008,NA,negative,1.25,Subadult,Male,Kingfisher Spruit,4.25
+206,0.008,NA,negative,1,Calf,Female,Kingfisher Spruit,4.25
+207,0.006,NA,negative,7.4,Adult,Female,Satara,3.5
+208,0.009,NA,negative,7.3,Adult,Female,Satara,4
+209,0.026,66,positive,12.1,Adult,Female,Satara,4.5
+210,0.452,1084,positive,1.25,Subadult,Male,Satara,4.25
+211,7.356,NA,positive,1.5,Subadult,Female,Satara,4.25
+212,0.01,4,negative,1,Calf,Male,Satara,3.75
+213,0.011,9,negative,2,Subadult,Female,Satara,4
+214,0.064,180,positive,6.2,Adult,Female,Satara,4.75
+215,0.013,16,negative,3.5,Adult,Female,Satara,4.25
+216,0.01,NA,negative,2,Subadult,Female,Satara,4.5
+217,0.012,11,negative,4.5,Adult,Female,Satara,4
+218,0.007,NA,negative,7,Adult,Female,Satara,4.75
+219,1.427,3841,positive,1,Calf,Female,Satara,4.25
+220,0.036,98,positive,1.25,Subadult,Male,Satara,3.75
+221,0.012,13,negative,1.5,Subadult,Female,Satara,3.75
+222,0.008,NA,negative,8.9,Adult,Female,Satara,4.5
+223,0.012,11,negative,12.2,Adult,Female,Satara,3.75
+224,0.009,NA,negative,3.5,Subadult,Female,Satara,5
+225,0.015,25,negative,1,Calf,Male,Satara,3.75
+226,0.008,NA,negative,1,Calf,Female,Satara,3.5
+227,0.016,30,negative,1,Calf,Female,Satara,4
+228,0.008,NA,negative,1.25,Subadult,Female,Satara,4.5
+229,0.009,NA,negative,4.5,Adult,Female,Houtboschrand,4.75
+230,0.014,21,negative,9,Adult,Female,Houtboschrand,4.5
+231,0.019,41,positive,1.5,Subadult,Male,Houtboschrand,3.5
+232,0.059,166,positive,1.5,Subadult,Male,Houtboschrand,4.25
+233,0.096,265,positive,1.25,Subadult,Male,Houtboschrand,4.25
+234,0.015,28,negative,1.25,Subadult,Male,Houtboschrand,3.5
+235,0.013,19,negative,7.2,Adult,Female,Houtboschrand,4.75
+236,0.008,NA,negative,1.25,Calf,Female,Houtboschrand,4
+237,0.006,NA,negative,1,Calf,Female,Houtboschrand,4
+238,0.011,9,negative,2,Subadult,Female,Houtboschrand,4.5
+239,0.013,18,negative,1.25,Subadult,Male,Houtboschrand,4.25
+240,0.011,6,negative,3.5,Subadult,Female,Houtboschrand,4.5
+241,0.011,7,negative,11.9,Adult,Female,Houtboschrand,4.25
+242,0.008,NA,negative,1.25,Subadult,Male,Houtboschrand,4
+243,0.007,NA,negative,1.25,Subadult,Male,Houtboschrand,4.25
+244,0.012,15,negative,2,Subadult,Female,Houtboschrand,4.5
+245,0.011,6,negative,1.25,Subadult,Female,Houtboschrand,3.5
+246,0.011,7,negative,1.75,Subadult,Male,Houtboschrand,4
+247,0.011,8,negative,1.25,Subadult,Male,Houtboschrand,3.5
+248,0.011,5,negative,1.25,Subadult,Male,Houtboschrand,3.25
+249,0.004,NA,negative,1,Calf,Female,Houtboschrand,4
+250,0.234,591,positive,NA,NA,NA,NA,NA
+251,0.007,NA,negative,NA,NA,NA,NA,NA
+252,2.553,12291,positive,NA,NA,NA,NA,NA
+253,0.027,72,positive,NA,NA,NA,NA,NA
+254,0.014,24,negative,NA,NA,NA,NA,NA
+255,0.008,NA,negative,1.25,Subadult,Female,Satara,4
+256,0.013,18,negative,1.5,Subadult,Male,Satara,4
+257,0.014,22,negative,2,Subadult,Female,Satara,4.25
+258,0.014,20,negative,5.5,Adult,Female,Satara,4
+259,0.042,117,positive,5.5,Adult,Female,Satara,4.5
+260,0.012,11,negative,1,Calf,Female,Satara,4.25
+261,0.009,NA,negative,8.1,Adult,Female,Satara,4.5
+262,0.008,NA,negative,1.25,Subadult,Male,Satara,4.25
+263,0.005,NA,negative,3,Adult,Female,Satara,4.75
+264,0.009,NA,negative,8.777,Adult,Female,Satara,4.75
+265,0.019,42,positive,4.5,Adult,Female,Satara,4.5
+266,0.028,74,positive,4.5,Adult,Female,Satara,4.25
+267,0.013,19,negative,1,Subadult,Female,Satara,4.25
+268,0.016,31,positive,10.4,Adult,Female,Satara,4.5
+269,0.01,NA,negative,4.2,Adult,Female,Satara,4
+270,0.012,15,negative,4.5,Adult,Female,Satara,4.25
+271,0.015,25,negative,1.25,Subadult,Male,Satara,4
+272,0.017,36,positive,1.25,Subadult,Female,Satara,3.5
+273,0.011,1,negative,6.9,Adult,Female,Satara,4.5
+274,0.01,0,negative,NA,NA,NA,NA,NA
+275,0.01,0,negative,2,Subadult,Male,Letaba,4
+276,0.019,15,negative,1.5,Subadult,Male,Letaba,4.25
+277,0.007,NA,negative,1.5,Subadult,Male,Letaba,4.25
+278,0.009,NA,negative,1.75,Subadult,Female,Letaba,4.5
+279,0.005,NA,negative,1.25,Subadult,Male,Letaba,4
+280,0.009,NA,negative,1.75,Subadult,Female,Letaba,4
+281,0.014,6,negative,1.25,Subadult,Male,Letaba,4
+282,0.004,NA,negative,1.5,Subadult,Male,Letaba,4
+283,0.007,NA,negative,1.5,Subadult,Female,Letaba,3.75
+284,0.01,1,negative,2,Subadult,Female,Letaba,4.25
+285,0.01,0,negative,2,Calf,Female,Letaba,4
+286,0.007,NA,negative,1.5,Subadult,Female,Letaba,4
+287,0.023,22,negative,1.5,Subadult,Female,Letaba,3.5
+288,0.005,NA,negative,1.5,Subadult,Male,Letaba,3.5
+289,0.006,NA,negative,1.25,Subadult,Female,Letaba,4.25
+290,0.015,8,negative,1.25,Subadult,Male,Letaba,3.75
+291,0.008,NA,negative,1.5,Subadult,Female,Letaba,4
+292,0.009,NA,negative,1.25,Subadult,Female,Letaba,4.25
+293,0.01,1,negative,2.5,Subadult,Female,Letaba,4
+294,0.007,NA,negative,1,Calf,Male,Mahlangeni,3.75
+295,0.005,NA,negative,1.25,Subadult,Female,Mahlangeni,4.25
+296,0.01,0,negative,1.25,Subadult,Female,Mahlangeni,4.5
+297,0.009,NA,negative,2,Subadult,Female,Mahlangeni,4.25
+299,0.01,1,negative,1,Subadult,Female,Mahlangeni,3.75
+300,0.009,NA,negative,1,Calf,Female,Mahlangeni,4
+301,0.011,1,negative,1.5,Subadult,Male,Mahlangeni,4
+302,0.012,3,negative,1.25,Subadult,Male,Mahlangeni,4
+303,0.005,NA,negative,1.25,Subadult,Female,Mahlangeni,3
+304,0.014,6,negative,2,Subadult,Female,Mahlangeni,4
+305,4.056,10975,positive,1,Subadult,Female,Phalaborwa,4
+306,0.007,NA,negative,1.5,Subadult,Female,Phalaborwa,4.5
+307,0.008,NA,negative,1,Subadult,Female,Phalaborwa,4.25
+308,0.018,14,negative,1.25,Subadult,Male,Phalaborwa,4
+309,0.011,1,negative,1.75,Subadult,Female,Phalaborwa,5
+310,0.008,NA,negative,1,Subadult,Male,Phalaborwa,4.25
+311,0.009,NA,negative,1.25,Subadult,Male,Phalaborwa,4.25
+312,0.444,957,positive,1.25,Subadult,Female,Phalaborwa,4.5
+313,0.008,NA,negative,NA,NA,NA,NA,NA
+314,0.009,NA,negative,1.75,Subadult,Male,Phalaborwa,4.75
+315,0.009,NA,negative,1.25,Subadult,Female,Phalaborwa,4.5
+316,0.008,NA,negative,2,Subadult,Male,Phalaborwa,4.5
+317,0.007,NA,negative,1,Subadult,Female,Phalaborwa,4
+318,0.011,3,negative,1.25,Subadult,Female,Phalaborwa,4.25
+319,0.01,0,negative,1,Calf,Female,Phalaborwa,4.75
+320,0.005,NA,negative,1.25,Subadult,Male,Phalaborwa,3.75
+321,0.011,2,negative,1.25,Subadult,Female,Phalaborwa,3.5
+322,0.084,140,positive,1.25,Subadult,Female,Phalaborwa,4
+323,0.028,30,negative,1.25,Subadult,Female,Phalaborwa,4.25
+324,0.008,NA,negative,2.5,Subadult,Female,Phalaborwa,4.5
+325,0.011,2,negative,1.5,Adult,Male,Phalaborwa,4.5
+326,0.011,2,negative,5,Adult,Female,Mooiplaas,4.25
+327,0.004,NA,negative,11.91,Subadult,Female,Mooiplaas,3.25
+328,0.012,3,negative,1.5,Subadult,Female,Mooiplaas,4.5
+329,0.01,0,negative,1.75,Subadult,Male,Mooiplaas,4
+330,0.01,0,negative,1,Calf,Female,Mooiplaas,4.25
+331,0.006,NA,negative,1.25,Subadult,Male,Mooiplaas,4.5
+332,0.007,NA,negative,1.25,Subadult,Male,Mooiplaas,4
+333,0.009,NA,negative,20.27,Adult,Female,Mooiplaas,4
+334,0.011,1,negative,1.25,Subadult,Female,Mooiplaas,4
+335,0.008,NA,negative,1.5,Subadult,Female,Mooiplaas,4.5
+336,0.011,3,negative,1.25,Subadult,Male,Mooiplaas,3.5
+337,0.008,NA,negative,1.75,Subadult,Male,Mooiplaas,3.75
+338,0.018,12,negative,1.5,Subadult,Male,Mooiplaas,3.5
+339,0.005,NA,negative,7.52,Adult,Female,Mooiplaas,4.25
+340,0.018,13,negative,6.09,Adult,Female,Mooiplaas,4.25
+341,0.01,1,negative,9.19,Adult,Female,Mooiplaas,3.5
+342,0.007,NA,negative,1.5,Subadult,Female,Mooiplaas,4.25
+343,0.007,NA,negative,1.25,Subadult,Female,Mooiplaas,4.25
+344,0.033,39,positive,1.25,Subadult,Male,Mooiplaas,4.5
+345,0.008,NA,negative,1,Calf,Female,Mooiplaas,4
+346,0.009,NA,negative,1.25,Subadult,Female,Mooiplaas,4.25
+347,0.007,NA,negative,3.5,Subadult,Female,Mooiplaas,4.5
+348,0.012,3,negative,11.81,Adult,Female,Mooiplaas,4.5
+349,0.011,1,negative,10.41,Adult,Female,Mooiplaas,4.25
+350,0.011,2,negative,4,Subadult,Female,Mooiplaas,4.75
+351,0.016,10,negative,2.5,Subadult,Female,Mooiplaas,4.25
+352,0.01,0,negative,2,Subadult,Female,Mooiplaas,4.25
+353,0.009,NA,negative,9.46,Adult,Female,Mooiplaas,4.75
+354,0.008,NA,negative,6.65,Adult,Female,Mooiplaas,5
+355,0.007,NA,negative,8.86,Adult,Female,Mooiplaas,4.75
+356,0.008,NA,negative,9.79,Adult,Female,Mooiplaas,5
+357,0.006,NA,negative,1.25,Subadult,Female,Mooiplaas,4.75
+358,0.009,NA,negative,1.25,Subadult,Male,Mooiplaas,4.5
+359,0.008,NA,negative,1.25,Subadult,Female,Mooiplaas,4
+360,0.01,1,negative,NA,NA,NA,NA,NA
+361,0.025,26,negative,NA,NA,NA,NA,NA
+362,0.013,4,negative,10.49,Adult,Female,Mooiplaas,4.5
+363,0.008,NA,negative,1.75,Subadult,Male,Mooiplaas,4.25
+364,0.011,NA,negative,1.25,Subadult,Male,Mooiplaas,4.5
+365,0.017,6,negative,1.75,Subadult,Male,Mooiplaas,4
+366,0.011,NA,negative,3,Subadult,Male,Mooiplaas,4.5
+367,0.009,NA,negative,1.5,Subadult,Female,Mooiplaas,4.25
+368,0.011,NA,negative,2,Subadult,Female,Mooiplaas,3.75
+369,0.019,9,negative,1.5,Subadult,Female,Mooiplaas,3.75
+370,0.008,NA,negative,1.75,Subadult,Female,Mooiplaas,3.5
+371,0.009,NA,negative,1.5,Subadult,Female,Mooiplaas,4.25
+372,0.012,NA,negative,1.25,Subadult,Female,Mooiplaas,4.75
+373,0.007,NA,negative,1.75,Subadult,Male,Mooiplaas,4.25
+374,0.009,NA,negative,2,Subadult,Female,Mooiplaas,4.75
+375,0.009,NA,negative,1.25,Subadult,Female,Mooiplaas,4.75
+376,0.008,NA,negative,0.75,Calf,Female,Mooiplaas,4.75
+377,0.01,NA,negative,1.5,Subadult,Male,Mooiplaas,5
+378,0.008,NA,negative,0.75,Calf,Female,Mooiplaas,4.5
+379,0.01,NA,negative,1.5,Subadult,Male,Mooiplaas,4.5
+380,0.01,NA,negative,2,Subadult,Male,Mooiplaas,4.5
+381,0.009,NA,negative,4.5,Adult,Female,Mahlangeni,3.5
+382,0.008,NA,negative,8.54,Adult,Female,Mahlangeni,3.25
+383,0.01,NA,negative,9.6,Adult,Female,Mahlangeni,3.5
+384,5.597,16078,positive,1.25,Subadult,Female,Mahlangeni,3.5
+385,0.015,4,negative,1.75,Subadult,Male,Mahlangeni,3.25
+386,0.01,NA,negative,2,Subadult,Female,Mahlangeni,4
+387,0.046,51,positive,1.25,Subadult,Female,Mahlangeni,3.75
+388,0.013,1,negative,2,Subadult,Male,Mahlangeni,3.75
+389,0.013,0,negative,2,Subadult,Female,Mahlangeni,3.25
+390,0.007,NA,negative,1.75,Subadult,Male,Mahlangeni,3.5
+391,0.014,3,negative,1.5,Subadult,Female,Mahlangeni,4
+392,0.012,NA,negative,1.25,Subadult,Male,Mahlangeni,3.75
+393,0.014,2,negative,9.77,Adult,Female,Mahlangeni,4.25
+394,0.013,0,negative,1,Calf,Male,Mooiplaas,4.25
+395,0.01,NA,negative,1.25,Subadult,Female,Mooiplaas,4.25
+396,0.01,NA,negative,1.25,Subadult,Male,Mooiplaas,4.5
+397,0.027,22,negative,2,Subadult,Male,Mahlangeni,4.75
+398,0.014,2,negative,1.25,Subadult,Male,Mahlangeni,3.5
+399,0.01,NA,negative,1.25,Subadult,Male,Mahlangeni,3.75
+400,0.01,NA,negative,1.5,Subadult,Male,Mahlangeni,3.75
+401,0.014,2,negative,1.25,Subadult,Female,Mahlangeni,3.5
+402,0.008,NA,negative,1.5,Subadult,Female,Mahlangeni,4.25
+403,0.007,NA,negative,1.75,Subadult,Female,Mahlangeni,3.25
+404,0.008,NA,negative,2,Subadult,Female,Mahlangeni,3.5
+405,0.012,NA,negative,1.5,Subadult,Male,Mahlangeni,3
+406,0.015,3,negative,1.75,Subadult,Female,Mahlangeni,3.5
+407,0.012,NA,negative,1.25,Subadult,Female,Mahlangeni,3.75
+408,0.013,0,negative,1.75,Subadult,Male,Mahlangeni,3.5
+409,0.014,2,negative,1.5,Subadult,Male,Mahlangeni,4
+410,0.012,0,negative,1.75,Subadult,Male,Mahlangeni,3.5
+411,0.009,NA,negative,1.5,Subadult,Female,Mahlangeni,3.5
+412,0.009,NA,negative,1,Subadult,Male,Mahlangeni,3.5
+413,0.014,2,negative,1.5,Calf,Female,Mahlangeni,3.5
+414,0.014,2,negative,1.25,Subadult,Female,Mahlangeni,3.5
+415,0.01,NA,negative,1,Subadult,Female,Mahlangeni,4
+416,0.01,NA,negative,1.5,Calf,Female,Mahlangeni,3.75
+417,0.01,NA,negative,2,Subadult,Female,Mahlangeni,3.25
+418,0.017,6,negative,1.5,Subadult,Female,Mahlangeni,3.5
+419,0.015,3,negative,1.5,Subadult,Male,Mahlangeni,3
+420,0.011,NA,negative,1.5,Subadult,Female,,4
+421,0.01,NA,negative,1.75,Subadult,Female,,4
+422,0.009,NA,negative,1.25,Subadult,Male,,3.75
+423,0.009,NA,negative,1.75,Subadult,Male,,3.5
+424,0.009,NA,negative,1.5,Subadult,Male,,3
+425,0.009,NA,negative,1.5,Subadult,Male,,3.5
+426,0.015,4,negative,1.25,Subadult,Male,,3.25
+427,0.012,NA,negative,9.15,Adult,Female,Pafuri,4
+428,0.009,NA,negative,14.55,Adult,Female,Pafuri,4
+429,0.011,NA,negative,1.25,Subadult,Male,Pafuri,4
+430,0.026,21,negative,1.25,Subadult,Female,Pafuri,4.25
+431,0.009,NA,negative,1.25,Subadult,Female,Pafuri,4.5
+432,0.011,NA,negative,1.5,Subadult,Male,Pafuri,4
+433,0.019,9,negative,1.25,Subadult,Male,Pafuri,3.75
+434,0.009,NA,negative,1.25,Subadult,Male,Pafuri,3.75
+435,0.013,1,negative,1.5,Subadult,Male,Pafuri,3.25
+436,0.012,NA,negative,2.5,Subadult,Female,Pafuri,3.75
+437,0.011,NA,negative,3,Subadult,Female,Pafuri,4.5
+438,0.009,NA,negative,0.5,Calf,Female,Pafuri,4
+439,0.006,NA,negative,2.5,Subadult,Female,Pafuri,4.25
+440,0.014,3,negative,1.5,Subadult,Male,Pafuri,3.25
+441,0.013,1,negative,1.5,Subadult,Female,Pafuri,4.5
+442,0.007,NA,negative,1.25,Subadult,Male,Pafuri,3
+443,0.019,10,negative,1.5,Subadult,Male,Pafuri,3.5
+444,0.014,2,negative,13.54,Adult,Female,Pafuri,3.5
+445,0.013,0,negative,13.94,Adult,Female,Shingwedzi,3.25
+446,0.017,6,negative,9.88,Adult,Female,Shingwedzi,4
+447,0.016,4,negative,16.21,Adult,Female,Shingwedzi,4.25
+449,0.034,33,positive,1.5,Subadult,Male,Shingwedzi,3.5
+450,0.01,NA,negative,1.75,Subadult,Female,Shingwedzi,4.5
+451,0.016,5,negative,1.5,Subadult,Male,Shingwedzi,3.75
+452,0.013,1,negative,13.02,Adult,Female,Shingwedzi,3.75
+453,0.01,NA,negative,NA,NA,NA,NA,NA
+454,0.021,12,negative,1.5,Subadult,Female,Shingwedzi,3.75
+455,0.013,11,negative,1.25,Subadult,Female,Shingwedzi,3.25
+456,0.007,NA,negative,1.5,Subadult,Female,Shingwedzi,4
+457,0.012,9,negative,15.08,Adult,Female,Shingwedzi,3.75
+458,0.011,7,negative,9.13,Adult,Female,Shingwedzi,4
+459,0.011,7,negative,13.58,Adult,Female,Shingwedzi,3.75
+460,0.019,22,negative,1.5,Subadult,Male,Shingwedzi,3.75
+461,0.012,9,negative,1.75,Subadult,Female,Shingwedzi,3.5
+462,0.021,26,negative,1,Calf,Male,Shingwedzi,3.75
+463,0.011,6,negative,7.5,Adult,Female,Shingwedzi,4
+464,0.009,2,negative,NA,NA,NA,NA,NA
+465,0.012,9,negative,15.48,Adult,Female,Shingwedzi,4.75
+466,0.009,3,negative,1.5,Subadult,Female,Shingwedzi,4
+467,1.291,3456,positive,1.75,Subadult,Male,Shingwedzi,3.75
+468,0.01,4,negative,1.25,Subadult,Male,Shingwedzi,3.5
+469,0.014,12,negative,9.57,Adult,Female,Vlakteplaas,3.5
+470,0.006,NA,negative,10.36,Adult,Female,Vlakteplaas,4.25
+471,0.041,66,positive,12.54,Adult,Female,Vlakteplaas,4.75
+472,0.01,4,negative,1,Calf,Female,Vlakteplaas,4.25
+473,0.015,15,negative,1,Calf,Female,Vlakteplaas,3
+474,0.066,116,positive,1,Calf,Male,Vlakteplaas,3.25
+475,0.014,12,negative,1.5,Subadult,Male,Vlakteplaas,3.75
+476,0.01,5,negative,1.25,Subadult,Male,Vlakteplaas,3.5
+477,0.057,99,positive,1.5,Subadult,Female,Vlakteplaas,3.75
+478,0.009,2,negative,1.25,Subadult,Female,Vlakteplaas,4
+479,0.407,863,positive,1.5,Subadult,Female,Vlakteplaas,3.75
+480,0.019,23,negative,1.25,Subadult,Male,Vlakteplaas,3.5
+481,0.009,2,negative,1.5,Subadult,Female,Vlakteplaas,3.75
+482,0.009,2,negative,1.75,Subadult,Female,Vlakteplaas,4.5
+483,0.012,9,negative,1.5,Subadult,Male,Vlakteplaas,4
+484,0.01,4,negative,1.75,Subadult,Male,Vlakteplaas,3.25
+485,0.011,6,negative,1,Calf,Male,Vlakteplaas,3.25
+486,0.006,NA,negative,1.5,Subadult,Female,Vlakteplaas,4
+487,0.008,0,negative,1.75,Subadult,Female,Vlakteplaas,4.25
+488,0.012,9,negative,2.5,Subadult,Female,Vlakteplaas,4
+489,0.009,2,negative,1.5,Subadult,Male,Vlakteplaas,3.5
+490,0.011,6,negative,1.25,Subadult,Female,Vlakteplaas,3.5
+491,0.011,6,negative,1.25,Subadult,Female,Vlakteplaas,4
+492,0.011,6,negative,1.5,Subadult,Female,Vlakteplaas,3.75
+493,0.009,2,negative,1.5,Subadult,Female,Vlakteplaas,3.75
+494,0.009,2,negative,1.5,Subadult,Male,Vlakteplaas,4
+495,0.015,15,negative,1.5,Subadult,Female,Vlakteplaas,3.75
+496,0.011,7,negative,1.5,Subadult,Female,Vlakteplaas,4
+497,0.023,29,negative,1.5,Subadult,Male,Vlakteplaas,4.25
+498,0.017,17,negative,2,Subadult,Female,Shingwedzi,3.75
+499,0.126,240,positive,2,Subadult,Female,Shingwedzi,4
+500,0.007,NA,negative,3.5,Subadult,Female,Shingwedzi,3.75
+501,0.01,5,negative,1.5,Subadult,Female,Shingwedzi,4
+502,0.012,8,negative,2,Subadult,Male,Shingwedzi,4.5
+503,0.022,28,negative,2.5,Subadult,Female,Shingwedzi,4.25
+504,0.01,5,negative,1.5,Subadult,Female,Shingwedzi,4
+505,0.008,NA,negative,NA,NA,NA,NA,NA
+506,0.023,31,positive,1.5,Subadult,Female,Shingwedzi,4
+507,0.007,NA,negative,1.25,Subadult,Female,Shingwedzi,4.25
+508,0.011,6,negative,1.25,Subadult,Female,Shingwedzi,3.75
+509,0.748,1734,positive,1.5,Subadult,Male,Shingwedzi,4
+510,0.011,7,negative,1.5,Subadult,Male,Shingwedzi,3.75
+511,0.011,6,negative,1.25,Subadult,Male,Shingwedzi,4
+512,0.104,195,positive,1.5,Subadult,Male,Shingwedzi,3.25
+513,0.008,1,negative,2.5,Subadult,Male,Shingwedzi,3.5
+514,0.012,9,negative,1.5,Subadult,Female,Shingwedzi,3.75
+515,0.011,6,negative,1.25,Subadult,Female,Shingwedzi,3.25
+516,0.012,9,negative,1.5,Subadult,Female,Shingwedzi,3.25
+517,0.012,9,negative,2,Subadult,Male,Shingwedzi,3.25
+518,0.01,4,negative,2.5,Subadult,Female,Shingwedzi,4
+519,0.01,5,negative,1.25,Subadult,Female,Shingwedzi,3.25
+520,0.012,8,negative,1.5,Subadult,Female,Shingwedzi,3.25
+521,0.011,7,negative,1.5,Subadult,Female,Shingwedzi,3
+522,0.026,37,positive,2.5,Subadult,Female,Shingwedzi,4.25
+523,0.011,6,negative,1.75,Subadult,Male,Shingwedzi,4.25
+524,0.016,16,negative,1.5,Subadult,Female,Shingwedzi,3.75
+525,0.023,29,negative,1.25,Subadult,Male,Shingwedzi,3.75
+526,0.008,1,negative,NA,NA,NA,NA,NA
+527,0.065,114,positive,1.5,Subadult,Female,Shingwedzi,3.75
+528,0.013,11,negative,1.5,Subadult,Female,Shingwedzi,3.5
+529,0.019,22,negative,1.5,Subadult,Female,Shingwedzi,3.75
+530,0.01,5,negative,1.25,Subadult,Female,Pafuri,3.75
+531,0.011,6,negative,3,Subadult,Female,Pafuri,3.75
+532,0.01,5,negative,1.75,Subadult,Male,Pafuri,3.25
+533,0.012,8,negative,1.5,Subadult,Female,Pafuri,3.5
+534,0.016,15,negative,1.5,Subadult,Female,Pafuri,3.5
+535,0.012,8,negative,3,Subadult,Female,Pafuri,3.75
+536,0.006,NA,negative,1.5,Subadult,Female,Pafuri,4.25
+537,0.012,9,negative,1.5,Subadult,Female,Pafuri,4
+538,0.011,7,negative,1.75,Subadult,Female,Pafuri,3.5
+539,0.013,11,negative,1.25,Subadult,Male,Pafuri,3.75
+540,0.009,2,negative,1.5,Subadult,Female,Pafuri,3.25
+541,0.011,7,negative,1.5,Subadult,Male,Pafuri,4.25
+542,0.013,11,negative,1.5,Subadult,Male,Pafuri,3
+543,0.019,22,negative,1.25,Subadult,Female,Pafuri,3.75
+544,0.006,NA,negative,2.5,Subadult,Female,Pafuri,4.25
+545,0.032,53,positive,3,Subadult,Male,Pafuri,4
+546,0.012,5,negative,NA,NA,NA,NA,NA
+547,0.009,NA,negative,1.5,Subadult,Female,Pafuri,4
+548,0.007,NA,negative,1.5,Subadult,Male,Pafuri,4
+549,0.065,129,positive,1.5,Subadult,Male,Pafuri,4
+550,0.011,NA,negative,1.5,Subadult,Male,Pafuri,3.5
+551,0.009,NA,negative,1.75,Subadult,Male,Pafuri,3.75
+552,0.011,1,negative,1.25,Subadult,Female,Pafuri,4
+553,4.373,10593,positive,1.5,Subadult,Female,Pafuri,3.75
+554,0.009,NA,negative,1.5,Subadult,Male,Pafuri,3.5
+555,0.012,3,negative,1.25,Subadult,Female,Pafuri,4.25
+556,0.009,NA,negative,1.5,Subadult,Female,Shingwedzi,4
+557,0.009,NA,negative,1.5,Subadult,Male,Shingwedzi,4.25
+558,0.009,NA,negative,1.75,Subadult,Female,Shingwedzi,3.5
+559,0.007,NA,negative,4.5,Subadult,Female,Punda Maria,3.75
+560,0.008,NA,negative,11.61,Adult,Female,Punda Maria,4.25
+561,0.009,NA,negative,NA,NA,NA,NA,NA
+562,0.011,2,negative,1.5,Subadult,Male,Pafuri,3.5
+563,0.005,NA,negative,5.5,Subadult,Female,Pafuri,3.5
+564,0.248,520,positive,2,Subadult,Male,Pafuri,3.5
+565,0.009,NA,negative,1.5,Subadult,Female,Pafuri,4
+566,0.008,NA,negative,1.5,Subadult,Male,Pafuri,3
+567,0.011,0,negative,5.5,Subadult,Female,Pafuri,3.25
+568,0.006,NA,negative,1.25,Subadult,Female,Pafuri,3.5
+569,0.009,NA,negative,1.5,Subadult,Male,Pafuri,3.75
+570,0.016,14,negative,2,Subadult,Female,Pafuri,3.5
+571,0.01,NA,negative,1.25,Subadult,Female,Pafuri,3.75
+572,0.011,2,negative,1.25,Subadult,Female,Pafuri,4
+573,0.011,1,negative,1.75,Subadult,Male,Pafuri,3.25
+574,0.012,5,negative,1.5,Subadult,Male,Pafuri,3.25
+575,0.009,NA,negative,1.5,Subadult,Male,Pafuri,3.5
+576,0.012,3,negative,1.75,Subadult,Male,Pafuri,3.5
+577,0.007,NA,negative,NA,NA,NA,NA,NA
+578,0.008,NA,negative,1.25,Subadult,Female,Pafuri,3
+579,0.007,NA,negative,2,Subadult,Male,Pafuri,3.5
+580,0.007,NA,negative,1.25,Subadult,Female,Pafuri,3.25
+581,0.014,10,negative,1.25,Subadult,Female,Pafuri,3.5
+582,0.01,NA,negative,1.25,Subadult,Male,Pafuri,3.5
+583,0.013,5,negative,1.25,Subadult,Male,Pafuri,2.75
+584,0.005,NA,negative,1.25,Subadult,Male,Pafuri,3.25
+585,0.008,NA,negative,1.5,Subadult,Female,Pafuri,3.5
+586,0.39,813,positive,1.5,Subadult,Female,Pafuri,3
+587,0.006,NA,negative,1.5,Subadult,Male,Pafuri,3.25
+588,0.008,NA,negative,1.5,Subadult,Male,Pafuri,3.25
+589,0.004,NA,negative,2.5,Subadult,Male,Pafuri,3.5
+590,0.011,1,negative,1.75,Subadult,Female,Pafuri,3
+591,0.006,NA,negative,1.25,Subadult,Male,Punda Maria,3.5
+592,0.006,NA,negative,1.25,Subadult,Female,Punda Maria,3.25
+593,0.005,NA,negative,2,Subadult,Female,Punda Maria,3.75
+594,0.007,NA,negative,1.5,Subadult,Female,Punda Maria,3
+595,0.012,4,negative,1.5,Subadult,Male,Punda Maria,3.5
+596,0.013,6,negative,1.5,Subadult,Male,Punda Maria,3.5
+597,0.01,NA,negative,2.75,Subadult,Female,Punda Maria,3.75
+598,0.008,NA,negative,1.25,Subadult,Male,Punda Maria,3.5
+599,0.008,NA,negative,1.5,Subadult,Female,Punda Maria,4
+600,0.012,5,negative,1.5,Subadult,Male,Punda Maria,3.75
+601,0.006,NA,negative,1.5,Subadult,Male,Punda Maria,3.5
+602,0.013,7,negative,1.5,Subadult,Male,Punda Maria,3.5
+603,0.013,8,negative,1.75,Subadult,Male,Punda Maria,3.75
