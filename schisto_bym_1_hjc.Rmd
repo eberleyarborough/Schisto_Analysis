@@ -1,0 +1,731 @@
+---
+title: "Schisto BYM Analysis"
+author: "Eberle Yarborough"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+This document is an attempt to generate preliminary INLA BYM models of *Schistosoma* spp. infection of African buffalo (*Syncerus caffer*) in Kruger National Park. Individual buffalo infection status is based off of a 2023 cross-sectional sampling event in Kruger National Park, South Africa. All molecular diagnostics were performed by Dr. Govert van Dam. This analysis aims to *loosely* incorporate spatial variation, along with host and vector characteristics, to determine what sections of KNP have higher or lower likelihood of schisto infection, thus guiding field sampling to be determined in the near future. Much of this code has been adapted from Fernando Mayer, as taught in the "Physalia Intro to Bayesian Statistics Using R-INLA" course. 
+
+### Setup, packages, working directory
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	eval = TRUE,
+	echo = TRUE,
+  include = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+```{r packages, include=FALSE}
+# Packages
+required_packages <- c("terra", "geodata", "sf", "sp", "terra", "fmesher",
+                       "tidyverse", "knitr", 
+                       "lme4", "viridis", "Matrix", "tibble",
+                       "FNN",
+                       "ggeffects", "ggnewscale", "ggtext",
+                       "ggfortify", "ggspatial",
+                       "stringr", "magrittr",
+                       "RColorBrewer", "httr", "scales",
+                       "abbreviate", "kableExtra", "texreg", "latex2exp",
+                       "patchwork",
+                       "remotes", "devtools", "callr",
+                       "spdep"
+)#
+
+# Install missing packages and load them
+for (pkg in required_packages) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg, dependencies = TRUE)  # Install package if missing
+    library(pkg, character.only = TRUE)         # Load package
+  }
+}
+
+
+if(!require(INLA)) install.packages("INLA",
+                    repos=c(getOption("repos"),
+                    INLA="https://inla.r-inla-download.org/R/stable"),
+                    dep=TRUE)
+#inla::inla.upgrade() # for the stable version
+
+if(!require(brinla)) remotes::install_github("julianfaraway/brinla")
+
+if(!require(ggregplot)) devtools::install_github("gfalbery/ggregplot") # Installing Greg's package for plotting functions!
+
+# Page parameters
+pageheight = 7.64 #11 - 2
+pagewidth = 4.7 #8.5 - 2
+
+# plot sizes
+textwidth <- 159.2 #mm
+textheight <- 236.2 #mm
+
+# Plot themes
+# Register Arial with the Windows graphics device
+# windowsFonts(Arial = windowsFont("Helvetica"))
+
+# Set theme
+ggTheme <- theme_classic()
+
+# Set plot details
+ggChange <- 
+theme(#text=element_text(size=8), #change font size of all text
+      text = element_text(family = "Helvetica"),
+      plot.title=element_text(size=10), #change font size of plot title
+      axis.title=element_text(size=10), #change font size of axis titles
+      axis.text=element_text(size=8), #change font size of axis text
+      legend.title=element_text(size=8),
+      legend.text=element_text(size=8) #change font size of legend text
+      )#
+
+# Plot settings alternative (called in inla background scripts)
+my_plot_settings <- 
+             theme(#text = element_text(family = "Helvetica"),
+             plot.title = element_text(size = 8),
+             plot.subtitle = element_text(size = 8),
+             axis.title = element_text(size = 8),
+             axis.text = element_text(size = 6),
+             legend.text = element_text(size = 6),
+             legend.title = element_text(size = 8),
+             legend.spacing.y = unit(0.5, 'mm'),
+             legend.box.spacing = unit(0.5, "mm"),
+             legend.key.size = unit(4, "mm"),
+             strip.text = element_text(size = 6))
+
+# Set working directory
+getwd()
+
+#file_path <- file.path("C:/Users/eberleyarborough/documents/2023 Buffalo XS Disease Data/Schisto/Schisto_Analysis")
+file_path <- file.path("C:/Users/henri/jolles_beechler_lab/eberle_yarborough")
+github <- "Schisto_Analysis-main"
+
+```
+
+## The Besag-York-Mollié (BYM) Model
+
+As a reminder, the BYM model is a standard approach for spatial areal data analysis. For observed outcomes $Y_i$ at regions $i=1,\ldots,n$ modeled using a Normal distribution:
+
+$$Y_i \sim \text{Normal}(\mu_i, \sigma^2), \quad i = 1,\ldots,n$$
+
+$$\mu_i = \boldsymbol{z_i \beta} + u_i + v_i$$
+
+Where:
+
+- **Fixed effects**: $\boldsymbol{z_i \beta}$ incorporates intercept and $p$
+  covariates: $\boldsymbol{z_i} = (1, z_{i1}, \ldots, z_{ip})$ with coefficient
+  vector $\boldsymbol{\beta} = (\beta_0, \ldots, \beta_p)'$
+- **Spatial random effect**: $u_i$ accounts for spatial dependence; neighboring
+  areas tend to have similar values
+- **Unstructured component**: $v_i$ models uncorrelated residual noise
+
+We will use this model to try to determine if there are specific regions within KNP that contain higher schisto prevalence (taking into consideration that capture locations are not the most reflective of buffalo territory).
+
+### Data: 2023 Buffalo KNP Mass Capture
+
+```{r load-data}
+## KNP map and sections
+# Park boundary from Henri
+knp.boundary <- st_read(file.path(file_path, "anaplasma_inla/shapefiles/bndry_kruger.shp")) # This is in WGS84/UTM 36S
+
+# Section boundaries from VWS
+knp.sections <- st_read(file.path(file_path, "anaplasma_inla/shapefiles/BNDRY_SECTIONS.shp")) # This is also in WGS84/UTM 36S
+
+# Joining the sections with the park boundary
+knp.section.combo <- st_join(knp.sections, knp.boundary["geometry"])
+
+# Visualizing the combined boundaries to make sure they merged appropriately
+ggplot() +
+  geom_sf(data = knp.section.combo, fill = "white", color = "black") +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+# Looks good
+knp.section.combo <- st_as_sf(knp.section.combo)
+
+# KNP sf columns of interest
+knp.geom <- knp.section.combo %>%
+  select(SECTION, REGION)
+
+# Renaming to match the disease data column names
+knp.geom$Section <- knp.geom$SECTION
+knp.geom$SECTION <- NULL
+
+## Disease data - jump to read in of bym.data
+schisto_data <- read_csv(file.path(file_path, github, "schisto_data.csv"), col_types = cols(animal.ID = col_integer(),`T/C Ratio` = col_number(), `CAA Estimate` = col_number()))
+
+schisto_data$Result <- as.factor(schisto_data$Result) # factor with 4 levels
+
+# anaplasma dataframe - has covariates of interest (age, sex, section, BCS) for basic analysis at this time
+anaplasma.data <- st_read(file.path(file_path, "anaplasma_inla/data/anaplasma_data_with_env_layers_coarsest.gpkg"), layer = "cap_with_env")
+
+# Renaming the animal.ID column for merging
+anaplasma.data$animal.ID <- anaplasma.data$Animal.ID
+anaplasma.data$Animal.ID <- NULL
+
+# Removing spaces
+anaplasma.data$age.class <- gsub(" ", "", anaplasma.data$age.class)
+
+# Selecting covariates of interest
+covars <- anaplasma.data %>% 
+  select(animal.ID, age.years, age.class, Sex, Section, BCS.Average)
+
+# Converting the capture locations back to easting/northing as a matrix, rather than point geometry
+buff.locations.utm <- st_coordinates(covars)
+buff.locations.unp <- buff.locations.utm
+buff.locations.unp  <- st_transform(covars$geom, crs = 4326)
+
+# Remove geom from data frame
+covars$y.south <- st_coordinates(buff.locations.unp)[,"Y"]
+covars$x.east <- st_coordinates(buff.locations.unp)[,"X"] 
+covars$geom <- NULL
+
+# Joining data frames - this is incomplete, as there are 20 buffalo tested for schisto that were not tested for anaplasma; thus covariate data is missing for these buffalo at this point
+schisto.bym.data <- left_join(schisto_data, covars, by = "animal.ID")
+
+# Dropping capture locations for now - only interested in section geometry for this analysis 
+schisto.bym.data$y.south <- NULL
+schisto.bym.data$x.east <- NULL
+
+# write.csv(schisto.bym.data, "schisto_bym_data.csv", sep = ",", na = "NA", col.names = TRUE)
+
+# Removing preliminary data frames and reloading in the correct bym data
+rm(schisto.bym.data)
+
+#bym.data <- read.csv(file.path(file_path, github, "schisto_bym_data.csv"))
+bym.data <- schisto.bym.data
+
+# Adding section boundaries to the disease data
+bym.data <- knp.geom%>%
+  left_join(bym.data, by = "Section")
+
+# Converting to the right classifications
+bym.data$CAA.Estimate <- bym.data$'CAA Estimate'
+bym.data$T.C.Ratio <- bym.data$'T/C Ratio'
+
+bym.data$CAA.Estimate <- as.numeric(bym.data$CAA.Estimate)
+bym.data$Result <- as.factor(bym.data$Result)
+bym.data$age.class <- as.factor(bym.data$age.class)
+bym.data$Sex <- as.factor(bym.data$Sex)
+```
+
+## Data Exploration
+
+### Spatial Distribution
+
+Looking at any spatial distribution in the response variable, whether that be CAA titer, T/C ratio, or positive/negative result.
+
+```{r explore-data}
+# Plot CAA titers by section
+ggplot(bym.data) +
+    geom_sf(aes(fill = CAA.Estimate)) +
+    scale_fill_viridis_c() +
+    labs(fill = "CAA Titer")
+
+# Plot T/C ratio by section
+ggplot(bym.data) +
+    geom_sf(aes(fill = T.C.Ratio)) +
+    scale_fill_viridis_c() +
+    labs(fill = "T/C Ratio")
+
+## To analyze positive cases, we need to convert to test positivity rate = total positives/total tests
+
+# Count positives per section
+section_counts <- bym.data %>%
+  st_drop_geometry() %>%                  # temporarily drop geometry for summarizing
+  group_by(Section) %>%
+  summarise(
+    n_positive = sum(Result == "positive", na.rm = TRUE),
+    n_total = n(),                        # total tested
+    prop_positive = n_positive / n_total  # proportion positive
+  )
+
+# Add section counts to the geom object, NOT the main data frame
+section.totals <- knp.geom %>%
+  left_join(section_counts, by = "Section")
+
+# Map by total positives per section
+schisto.total.per.section <- ggplot(section.totals) +
+  geom_sf(aes(fill = n_positive)) +
+  scale_fill_viridis_c(option = "plasma", trans = "sqrt") +
+  labs(
+    title = "Schisto Positives by Section",
+    fill = "Number Positive Cases"
+  ) +
+  theme_minimal()
+
+schisto.total.per.section
+
+# Map by proportion positive per section
+schisto.proportion.per.section <- ggplot(section.totals) +
+  geom_sf(aes(fill = prop_positive)) +
+  scale_fill_viridis_c(option = "plasma", trans = "sqrt") +
+  labs(
+    title = "Schisto Proportion Positives by Section",
+    fill = "Proportion Positive Cases"
+  ) +
+  theme_minimal()
+
+# Include total # sampled per section on the proportion positive map
+schisto.prop.with.nsampled <- ggplot(section.totals) +
+  geom_sf(aes(fill = prop_positive)) +
+  geom_sf_text(aes(label = n_total),
+                size = 2.5,
+                color = "white",
+               fontface = "bold",
+               check_overlap = TRUE) +
+  scale_fill_viridis_c(option = "plasma", trans = "sqrt") +
+  labs(
+    title = "Schisto Proportion Positives by Section",
+    fill = "Proportion Positive Cases"
+  ) +
+  theme_void()
+
+schisto.prop.with.nsampled
+
+schisto.total.per.section + schisto.prop.with.nsampled
+# what is the saturation point for number tested vs prop pos?
+
+```
+
+These maps show little variation; however, there may be higher titers and/or T/C ratios in the Skukuza section. The proportion and total counts also seem to point towards Skukuza or Malelane sections (need to check section boundaries).
+
+### Exploratory Multivariate Analysis
+
+Let's look at any pairwise relationships between schisto result and covariates:
+
+```{r pairwise-relationships}
+## Test result and age
+ggplot(bym.data,
+       aes(Result, age.years)) +
+  geom_boxplot()
+
+# Converting schisto result to binary for correlation analyses
+bym.data <- bym.data %>%
+  mutate(result_binary = ifelse(Result == "positive", 1, 0))
+
+cor.test(bym.data$result_binary, bym.data$age.years) 
+# No significant correlation
+
+## Visualize result and categorical vars
+
+# Sex
+ggplot(bym.data, aes(Sex, fill = bym.data$Result)) + geom_bar(position = "fill") 
+# Almost equal proportion of positive males and females
+
+# Average BCS
+ggplot(bym.data, aes(BCS.Average, fill = bym.data$Result)) + geom_bar(position = "fill") 
+# No clear pattern to BCS
+
+# Section
+ggplot(bym.data, aes(Section, fill = bym.data$Result)) + geom_bar(position = "fill") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+# 100% positives in Malelane (n=4), over half in Skukuza (n=31) - suggests some spatial variation
+
+
+```
+
+Key observations:
+
+- No clear relationship between sex, age, or average BCS and schisto results
+- Some spatial relationship between section and schisto result, with Skukuza and Malelane sections having the highest proportion of positive results
+
+### Model Specification
+
+Now we want to specify a BYM model with a binomial distribution of the response variable:
+
+$$
+\mu_i = \beta_0 + \beta_1 \times \text{Age}_i + \beta_2 \times
+\text{Average BCS}_i + \beta_3 \times
+\text{Sex}_i + u_i + v_i
+$$
+
+Where:
+
+- $\beta_0$ is the intercept
+- $\beta_1$ and $\beta_2$ are coefficients for age, average BCS, and sex, respectively
+- $u_i$ is the spatially structured effect with CAR structure:
+  $u_i|\mathbf{u_{-i}} \sim N(\bar{u}_{\delta_i},
+  \frac{\sigma_u^2}{n_{\delta_i}})$
+- $v_i$ is the unstructured effect: $v_i \sim N(0, \sigma_v^2)$
+
+We also need to construct the neighborhood matrix. Two areas are considered neighbors if they share a common boundary. Create the neighborhood structure using the **spdep** package:
+
+```{r neighborhood-matrix, include=FALSE}
+## Load required libraries
+library(spdep)
+
+## Create neighbors list from polygon boundaries - for each neighborhood, what are the next closest neighbors (gives the structure of the spatial autocorrelation?)
+
+## The poly2nb() function creates a neighbor list based on regions with contiguous boundaries (sharing 1+ boundary point) - not sure if this works well for our dataset?
+neighbors <- poly2nb(bym.data)
+
+## Inspect first few neighbors
+head(neighbors)
+
+## Convert neighbors list to R-INLA adjacency format, which is a matrix format that inla need to "see" which regions are neighbors
+nb2INLA("bym.adj", neighbors)
+
+## Read the adjacency matrix
+g <- inla.read.graph(filename = "bym.adj")
+```
+
+### Model Formula and INLA Function Call
+
+Now we'll create **index vectors** for random effects. Recall from the Physalia course that index vectors are vectors that select specific elements from another vector/data structure. They act as sets of instructions, helping to specify which positions/conditions should be used to extract/manipulate the data. These two indices use the same data, but they will be modeled differently later on (in the f() function).
+
+```{r random-effects-indices}
+## Create index vectors for spatial and unstructured effects
+bym.data$re_u <- 1:nrow(bym.data)
+bym.data$re_v <- 1:nrow(bym.data)
+
+## Now specify the model formula with the 'f()' function for random effects:
+# Define the model formula - remember that 'u' is the structured spatial effect, 'v' is the unstructured effect
+bym.formula <- result_binary ~ age.years + Sex + BCS.Average +
+    f(re_u, model = "besag", graph = g, scale.model = TRUE) +
+    f(re_v, model = "iid")
+```
+
+In this formula:
+
+- Response variable: `result.binary`` (binary pos/neg schisto result)
+- Fixed effects: `age.years`, `Sex`, and `BCS.Average` (intercept included by default)
+- First random effect `f(re_u, ...)`: Spatial component using BESAG model
+- `scale.model = TRUE` makes precision parameters comparable across different
+  CAR priors
+- Second random effect `f(re_v, ...)`: Unstructured IID component
+
+Now we'll fit the model to see if it runs *before* trying to also specify a BYM2 model:
+
+### Fit the Model
+
+Call the `inla()` function to fit the model:
+
+```{r fit-model}
+bym.model <- inla(bym.formula,
+                  family = "binomial",
+                  data = bym.data,
+    control.predictor = list(compute = TRUE, link = 1),
+    control.compute = list(return.marginals.predictor = TRUE),
+    num.threads = parallel::detectCores() - 5) # specify how many cores you can run on your machine
+```
+
+Arguments:
+
+- `formula`: Model specification
+- `family = "binomial"`: Response distribution
+- `data = bym.data`: Data frame
+- `control.predictor = list(compute = TRUE)`: Compute posterior means of predictors
+- `link = 1`: tells R to use the logit link function when computing predictions, since we're fitting a binomial model
+- `control.compute = list(return.marginals.predictor = TRUE)`: Return marginal distributions
+
+*Note here that the marginals still will still be given on the linear predictor scale (logit) and need to be transformed to probabilities. 
+
+## Model Results and Interpretation
+
+### Fixed Effects Summary
+
+Extract and examine fixed effects estimates:
+
+```{r fixed-effects}
+## Extract fixed effects summary
+bym.model$summary.fixed
+
+## Converting beta estimates to odds ratios since each beta is the change in log-odds of being positive for a one-unit change in the predictor, holding all else constant
+exp(bym.model$summary.fixed[, "mean"])
+```
+
+**Intercept**: $\hat{\beta}_0 = -3.074$ with 95% credible interval (-5.404, -0.759)
+- Log-odds of a positive test when all predictors are 0 (which doesn't make sense in this model)
+- Baseline odds: 0.046
+
+**Age coefficient**: $\hat{\beta}_1 = 0.005$ with 95% credible interval (-0.068, 0.079)
+- Odds ratio: 1.005; a 1 year increase in age increases the odds of being schisto positive by 1.005
+- No significant effect on schisto positivity
+
+**Sex coefficient**: $\hat{\beta}_2 = 0.049$ with 95% credible interval (-0.491, 0.589)
+- Odds ratio: 1.050; being male increases the odds of being schisto positive by 1.050
+- No significant effect on schisto positivity
+
+**BCS coefficient**: $\hat{\beta}_3 = 0.290$ with 95% credible interval (-0.279, 0.859)
+- Odds ratio: 1.338; a 1-unit increase in BCS increases the odds of being schisto positive by 1.338
+- No significant effect on schisto positivity 
+
+### Fitted Values & Predictions
+
+Obtain posterior summaries for fitted values $\mu_i$:
+
+```{r fitted-values}
+## Extract fitted values summary
+summary(bym.model$summary.fitted.values)
+```
+
+### Create Prediction Variables
+
+Extract posterior means and credible intervals and add to the dataframe:
+
+```{r prediction-vars}
+## Create posterior mean and 95% credible interval variables - INLA automatically back transforms these to probabilities 
+bym.data$PM <- bym.model$summary.fitted.values[, "mean"]
+bym.data$LL <- bym.model$summary.fitted.values[, "0.025quant"]
+bym.data$UL <- bym.model$summary.fitted.values[, "0.975quant"]
+```
+
+### Visualization of Schisto Probabilities by Section
+
+Create synchronized maps showing posterior mean and credible intervals:
+
+```{r probability-maps}
+## Calculate common scale limits
+scale_limits <- c(min(c(bym.data$PM, bym.data$LL, bym.data$UL)),
+    max(c(bym.data$PM, bym.data$LL, bym.data$UL)))
+
+p1 <- ggplot(bym.data) +
+    geom_sf(aes(fill = PM)) +
+    scale_fill_viridis_c(limits = scale_limits, name = "Probability of Schistosoma Infection") +
+    labs(title = "Posterior Mean") +
+    theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text = element_blank(),
+        plot.title = element_text(size = rel(0.75), angle = 45, hjust = 1))
+
+p2 <- ggplot(bym.data) +
+    geom_sf(aes(fill = LL)) +
+    scale_fill_viridis_c(limits = scale_limits, name = "Probability of Schistosoma Infection") +
+    labs(title = "Lower Limit (2.5%)") +
+    theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text = element_blank(),
+        plot.title = element_text(size = rel(0.75), angle = 45, hjust = 1))
+
+p3 <- ggplot(bym.data) +
+    geom_sf(aes(fill = UL)) +
+    scale_fill_viridis_c(limits = scale_limits, name = "Probability of Schistosoma Infection") +
+    labs(title = "Upper Limit (97.5%)") +
+    theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text = element_blank(),
+        plot.title = element_text(size = rel(0.75), angle = 45, hjust = 1))
+
+## Combine with shared legend
+combo.schisto.map <- p2 + p1 + p3 +
+    plot_layout(ncol = 3, guides = "collect") &
+    theme(legend.position = "bottom")
+```
+
+These maps show the posterior means and credible intervals of the predicted probability of schisto presence in buffalo across Kruger National Park, estimated from a spatial BYM model.
+
+### Alternative: BYM2 Model
+
+There is an alternative **BYM2** model, which is a re-parametrization combining scaled spatial ($\boldsymbol{u_*}$) and unstructured ($\boldsymbol{v_*}$) components (combines the random effects):
+
+$$
+\boldsymbol{b} = \frac{1}{\sqrt{\tau_b}}(\sqrt{1-\phi}\boldsymbol{v_*} +
+\sqrt{\phi}\boldsymbol{u_*})
+$$
+Where:
+
+- $\tau_b > 0$: precision parameter controlling marginal variance
+- $0 \leq \phi \leq 1$: mixing parameter measuring spatial component
+  contribution
+- $\phi = 1$: pure spatial model
+- $\phi = 0$: pure unstructured noise (the general precision of the model)
+
+Essentially, the phi terms assign "weights" between 0 and 1 to the random effects (i.e., how structured or unstructured is that component of the combined random effect?)
+
+Formula specification for BYM2 (something you can pick from in the types of random effects):
+
+```{r bym2-formula}
+## BYM2 model formula (not evaluated)
+bym.2.formula <- result_binary ~ age.years + Sex + BCS.Average + f(re_u, model = "bym2", graph = g)
+```
+
+**Fitting the model:**
+
+```{r fitting-bym2}
+## Fitting the BYM2 model
+bym2.model <- inla(bym.2.formula, family = "binomial", data = bym.data,
+    control.predictor = list(compute = TRUE, link = 1),
+    control.compute = list(return.marginals.predictor = TRUE),
+    num.threads = parallel::detectCores() - 5) # specify how many cores you can run on your machine
+```
+
+Note here that, as with the BYM model, the marginals still will still be given on the linear predictor scale (logit) and need to be transformed to probabilities. 
+
+**Extracting and examining the fixed effects estimates:**
+
+```{r fixed-effects-2}
+## Extract fixed effects summary
+bym2.model$summary.fixed
+
+## Converting beta estimates to odds ratios since each beta is the change in log-odds of being positive for a one-unit change in the predictor, holding all else constant
+exp(bym2.model$summary.fixed[, "mean"])
+```
+
+*Intercept*: $\hat{\beta}_0 = -3.108$ with 95% credible interval (-5.435, -0.793)
+- Log-odds of a positive test when all predictors are 0 (which doesn't make sense in this model)
+- Baseline odds: 0.045
+- Not much change from the BYM model
+
+*Age coefficient*: $\hat{\beta}_1 = 0.006$ with 95% credible interval (-0.068, 0.080)
+- Odds ratio: 1.006; a 1-year increase in age increases the odds of being schisto positive by 1.006
+- Still no significant effect on schisto positivity
+
+*Sex coefficient*: $\hat{\beta}_2 = 0.051$ with 95% credible interval (-0.489, 0.591)
+- Odds ratio: 1.053; being male increases the odds of being schisto positive by 1.053
+- Still no significant effect on schisto positivity
+
+*BCS coefficient*: $\hat{\beta}_3 = 0.298$ with 95% credible interval (-0.270, 0.866)
+- Odds ratio: 1.348; a 1-unit increase in BCS increases the odds of being schisto positive by 1.338
+- Still no significant effect on schisto positivity
+
+**Fitted Values & Predictions**
+
+Obtain posterior summaries for fitted values $\mu_i$:
+
+```{r fitted-values-2}
+## Extract fitted values summary
+posterior_probs_2 <- summary(bym2.model$summary.fitted.values)
+```
+
+Extract posterior means and credible intervals and add to the dataframe:
+
+```{r prediction-vars-2}
+## Create posterior mean and 95% credible interval variables - INLA automatically back transforms these to probabilities 
+bym.data$PM.2 <- bym2.model$summary.fitted.values[, "mean"]
+bym.data$LL.2 <- bym2.model$summary.fitted.values[, "0.025quant"]
+bym.data$UL.2 <- bym2.model$summary.fitted.values[, "0.975quant"]
+```
+
+Map the same way we did with the BYM earlier.
+
+```{r probability-maps-2}
+## Calculate common scale limits
+scale_limits_2 <- c(min(c(bym.data$PM.2, bym.data$LL.2, bym.data$UL.2)),
+    max(c(bym.data$PM.2, bym.data$LL.2, bym.data$UL.2)))
+
+p4 <- ggplot(bym.data) +
+    geom_sf(aes(fill = PM.2)) +
+    scale_fill_viridis_c(limits = scale_limits_2, name = "Model Probability") +
+    labs(title = "Posterior Mean") +
+    theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text = element_blank(),
+        plot.title = element_text(size = rel(0.75), angle = 45, hjust = 1))
+
+p5 <- ggplot(bym.data) +
+    geom_sf(aes(fill = LL.2)) +
+    scale_fill_viridis_c(limits = scale_limits_2, name = "Model Probability") +
+    labs(title = "Lower Limit (2.5%)") +
+    theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text = element_blank(),
+        plot.title = element_text(size = rel(0.75), angle = 45, hjust = 1))
+
+p6 <- ggplot(bym.data) +
+    geom_sf(aes(fill = UL.2)) +
+    scale_fill_viridis_c(limits = scale_limits_2, name = "Model Probability") +
+    labs(title = "Upper Limit (97.5%)") +
+    theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text = element_blank(),
+        plot.title = element_text(size = rel(0.75), angle = 45, hjust = 1))
+
+## Combine with shared legend
+combo.schisto.map.2 <- p5 + p4 + p6 +
+    plot_layout(ncol = 3, guides = "collect") &
+    theme(legend.position = "bottom")
+
+combo.schisto.map.2
+
+# I think these would be nice with an adjacent catipilar plot
+```
+
+Requested combined plot of the schisto proportion positive (with # sampled) and posterior mean
+
+```{r combo-plot}
+# New version of schisto proportion map
+p7 <- ggplot(section.totals) +
+  geom_sf(aes(fill = prop_positive)) +
+  geom_sf_text(aes(label = n_total),
+                size = 2.5,
+                color = "white",
+               fontface = "bold",
+               check_overlap = TRUE) +
+  scale_fill_viridis_c(option = "plasma", trans = "sqrt") +
+  labs(fill = "Proportion Positive Cases") +
+  theme_void()
+
+# New posterior mean probability map
+p8 <- ggplot(bym.data) +
+    geom_sf(aes(fill = PM.2)) +
+    scale_fill_viridis_c(limits = scale_limits_2, name = "Posterior Mean Probability") +
+    theme_void()
+
+combo.schisto.map.3 <- p7 + p8 +
+  plot_layout(ncol = 2, guides = "keep") &
+  theme(legend.position = "right")
+
+combo.schisto.map.3
+```
+
+Create a table of posterior mean probability values by section
+
+```{r posterior-probs-table}
+# Creating a df with the fitted values from earlier
+bym2_posterior_df <- data.frame(
+  Section = bym.data$Section,
+  Posterior_Mean = bym.data$PM.2,
+  Lower_95CI = bym.data$LL.2,
+  Upper_95CI = bym.data$UL.2,
+  SD = bym2.model$summary.fitted.values$sd
+)
+
+# Aggregating by section
+posterior_prob_by_section <- bym2_posterior_df %>%
+  group_by(Section) %>%
+  summarise(
+    n_observations = n(),
+    Mean_Probability = mean(Posterior_Mean),
+    Lower_95CI = mean(Lower_95CI),
+    Upper_95CI = mean(Upper_95CI),
+    SD_Probability = mean(SD)
+  ) %>%
+  arrange(desc(Mean_Probability))
+
+# View
+print(posterior_prob_by_section)
+
+# Format the table and save as pdf
+library(gt)
+library(webshot2)
+
+posterior_prob_by_section %>%
+  gt() %>%
+  cols_label(
+    Section = "Section",
+    n_observations = "Number Sampled",
+    Mean_Probability = "Mean Probability",
+    Lower_95CI = "Lower 95% CI",
+    Upper_95CI = "Upper 95% CI",
+    SD_Probability = "Std. Dev"
+  ) %>%
+  fmt_number(
+    columns = c(Mean_Probability, Lower_95CI, Upper_95CI, SD_Probability),
+    decimals = 3
+  ) %>%
+  tab_header(
+    title = "Mean Posterior Schisto Probabilities by Section"
+  ) %>%
+  gtsave(path = file.path(file_path, github), 
+         filename = "posterior_schisto_bym2_values.pdf")
+        
+```
+
