@@ -745,7 +745,7 @@ for(x in 1:length(resp)){
                            Covar = covar,
                            Resp = resp[x],
                            LOCUTM = LOCUTMset,
-                           BNDRY = BdrY,
+                           BNDRY = kruger_shape,
                            Max_edge = Max_edge_set,
                            Cutoff = Cutoff_set,
                            Offset = Offset_set,
@@ -896,7 +896,7 @@ for(x in 1:length(resp)){
                            Covar = covar,
                            Resp = resp[x],
                            LOCUTM = LOCUTMset,
-                           BNDRY = BdrY,
+                           BNDRY = kruger_shape,
                            Max_edge = Max_edge_set,
                            Cutoff = Cutoff_set,
                            DTsubset = FALSE)
@@ -918,7 +918,7 @@ for(x in 1:length(resp)){
                              spdepriorrange = spdepriorrange_set,
                              spdepriorsigma = spdepriorsigma_set,
                              LOCUTM = LOCUTMset,
-                             BNDRY = BdrY, 
+                             BNDRY = kruger_shape, 
                              #CatVarSub =  include the repeated sampling group here if needed
                              Max_edge = Max_edge_set,
                              Mesh.list = mesh)
