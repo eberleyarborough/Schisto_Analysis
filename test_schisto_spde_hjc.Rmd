@@ -118,6 +118,17 @@ gitlab <- "anaplasma_inla"
 github <- "Schisto_Analysis-main"
 ```
 
+```{r}
+# check dir structure
+
+if(!file.exists(file.path(file_path, github, "figures"))) file.create(file.path(file_path, github, "figures"))
+if(!file.exists(file.path(file_path, github, "tables"))) file.create(file.path(file_path, github, "tables"))
+if(!file.exists(file.path(file_path, github, "inla.model"))) file.create(file.path(file_path, github, "inla.model"))
+if(!file.exists(file.path(file_path, github, "inla.model", "dic"))) file.create(file.path(file_path, github, "inla.model", "dic"))
+if(!file.exists(file.path(file_path, github, "inla.model", "logfiles"))) file.create(file.path(file_path, github, "inla.model", "logfiles"))
+```
+
+
 These are scripts for doing various things that Henri wrote or adapted. Some are called later, especially for plotting the spatial fields. They can be run in the background with "background jobs > script > run with a copy of global environment > copy to global environment."
 
 ```{r custom-scripts}
