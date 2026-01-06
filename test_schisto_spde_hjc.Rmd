@@ -321,23 +321,20 @@ my_mesh_function <- function(DT = NULL,
   }
   
   # mesh
-  #Mesh = inla.mesh.2d(loc = LOC,
-  #                    boundary = BNDRY, 
-  #                    max.edge = Max_edge,
-  #                    cutoff = Cutoff)     
-  
+  # fmesher replaced the inla.mesh functions
   Mesh = fmesher::fm_mesh_2d_inla(
                       loc = LOC,
-                      boundary = bdry.sp2s, 
+                      boundary = fmesher::fm_as_segm(BNDRY),
                       max.edge = Max_edge,
-                      cutoff = Cutoff)         
+                      cutoff = Cutoff,
+                      offset = Offset)         
   
-  
-  cat("Created mesh - X range:", range(Mesh$loc[,1]), "\n")
+    cat("Created mesh - X range:", range(Mesh$loc[,1]), "\n")
   cat("Created mesh - Y range:", range(Mesh$loc[,2]), "\n")
   
   Mesh
 }
+
 
 ### END FUNCTION ###
 ```
@@ -634,8 +631,8 @@ spdepriorsigma_set = c(10, 0.1) #spde prior P(sigma > 5) = 0.1
 # Set mesh edge values
 # Controls triangle size (inner, outer)
 Max_edge_set <- if(isTRUE(LOCUTMset)){
-  #this is inner edge length 1.5km and outer edge length 25km in UTM
-  c(1500, 15000)
+  #this is inner edge length 1.5km and outer edge length 15km in UTM
+  c(5000, 20000)
   #c(10000, 30000)
 } else {
   c(0.045, 0.09) #latlong 0.03
@@ -651,7 +648,7 @@ Cutoff_set <- if(isTRUE(LOCUTMset)){
 # Buffer inside/outside boundary
 Offset_set <- if(isTRUE(LOCUTMset)){
   #this is 5km inside and 10km outside the boundary, in UTM
-  c(1000, 5000)
+  c(3000, 5000)
 } else {
   c(0.045, 0.009)
 }
@@ -696,7 +693,7 @@ my_mesh_function(DT = schisto_subset_data,
                  Resp = resp[[x]],
                  LOCUTM = LOCUTMset,
                  toUTM = toUTMset,
-                 BNDRY = BdrY,
+                 BNDRY = kruger_shape,
                  Max_edge = Max_edge_set,
                  Cutoff = Cutoff_set,
                  Offset = Offset_set,
@@ -1082,7 +1079,7 @@ for(x in 1:length(resp)){
                            Resp = resp[[x]],
                            LOCUTM = LOCUTMset,
                            toUTM = toUTMset,
-                           BNDRY = BdrY,
+                           BNDRY = kruger_shape,
                            Max_edge = Max_edge_set,
                            Cutoff = Cutoff_set,
                            Offset = Offset_set,
@@ -1110,7 +1107,7 @@ for(x in 1:length(resp)){
                              spdepriorrange = spdepriorrange_set,
                              spdepriorsigma = spdepriorsigma_set,
                              LOCUTM = LOCUTMset,
-                             BNDRY = BdrY, 
+                             BNDRY = kruger_shape, 
                              #CatVarSub = "capture.year2009",
                              Max_edge = Max_edge_set,
                              Mesh.list = mesh)
@@ -1394,7 +1391,7 @@ mod3.list.halvingrange <-
   as.data.frame()
 mod3.list.halvingrange
 write.csv(mod3.list.halvingrange, file = file.path(file_path, github, "inla.model","mod3_halvingrange.csv"))
-#mod3.list.halvingrange <- read.csv(file = file.path(file_path, "inla.model","mod3_halvingrange.csv"), header = T)
+#mod3.list.halvingrange <- read.csv(file = file.path(file_path, github, "inla.model","mod3_halvingrange.csv"), header = T)
 
 
 # clean up
