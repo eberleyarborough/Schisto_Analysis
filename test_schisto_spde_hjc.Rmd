@@ -113,6 +113,7 @@ my_plot_settings <-
              legend.key.size = unit(4, "mm"),
              strip.text = element_text(size = 6))
 
+
 file_path <- file.path("C:/Users/henri/jolles_beechler_lab/eberle_yarborough")
 gitlab <- "anaplasma_inla"
 github <- "Schisto_Analysis-main"
@@ -340,7 +341,7 @@ my_mesh_function <- function(DT = NULL,
                       cutoff = Cutoff,
                       offset = Offset)         
   
-    cat("Created mesh - X range:", range(Mesh$loc[,1]), "\n")
+  cat("Created mesh - X range:", range(Mesh$loc[,1]), "\n")
   cat("Created mesh - Y range:", range(Mesh$loc[,2]), "\n")
   
   Mesh
@@ -780,7 +781,7 @@ for(x in 1:length(resp)){
                              spdepriorrange = spdepriorrange_set,
                              spdepriorsigma = spdepriorsigma_set,
                              LOCUTM = NULL,
-                             BNDRY = BdrY, 
+                             BNDRY = kruger_shape, 
                              Max_edge = Max_edge_set,
                              Mesh.list = mesh)
   
