@@ -61,12 +61,12 @@ if(!require(ggregplot)) devtools::install_github("gfalbery/ggregplot") # Install
 # Set project directory here for easy file paths.
 # If you opened this as a project getwd(), should be the project directory
 
-getwd()
+#getwd()
 
 # If you opened this in another way, set the project directory manually below
 # There are other "better" ways to do this, but I find them not to be consistent, e.g. the 'here' package
 
-#file_path <- file.path("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/Schisto/Schisto_Analysis")
+file_path <- file.path("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/Schisto/Schisto_Analysis")
 
 # Then set relative file path later on, e.g.:
 # file.path(file_path, "shapefiles", "kruger.shp")
@@ -110,13 +110,28 @@ my_plot_settings <-
              legend.box.spacing = unit(0.5, "mm"),
              legend.key.size = unit(4, "mm"),
              strip.text = element_text(size = 6))
+
+#gitlab <- "anaplasma_inla"
+#github <- "Schisto_Analysis" # this is the same as the parent directory/github directory already
 ```
+
+These are lines Henri wrote to make sure the github has the necessary directory structure for the code to run appropriately:
+
+```{r checking-directory-structure}
+# check dir structure - DONE
+#if(!file.exists(file.path(file_path, "figures"))) dir.create(file.path(file_path, "figures"))
+#if(!file.exists(file.path(file_path, "tables"))) dir.create(file.path(file_path, "tables"))
+#if(!file.exists(file.path(file_path, "inla.model"))) dir.create(file.path(file_path, "inla.model"))
+#if(!file.exists(file.path(file_path, "inla.model", "dic"))) dir.create(file.path(file_path, "inla.model", "dic"))
+#if(!file.exists(file.path(file_path, "inla.model", "logfiles"))) dir.create(file.path(file_path, "inla.model", "logfiles"))
+#if(!file.exists(file.path(file_path, "inla.model", "dic", "dic_fieldplots"))) dir.create(file.path(file_path, "inla.model", "dic", "dic_fieldplots"))
+```
+
 
 These are scripts for doing various things that Henri wrote or adapted. Some are called later, especially for plotting the spatial fields. They can be run in the background with "background jobs > script > run with a copy of global environment > copy to global environment."
 
 ```{r custom-scripts}
 # load scripts - use full file path since scrips are in a different directory
-
 source("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/Anaplasma/gitlab/anaplasma_inla/scripts/rfunction_inla_my_INLARange.R")
 source("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/Anaplasma/gitlab/anaplasma_inla/scripts/rfunction_inla_my_ggField.R")
 source("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/Anaplasma/gitlab/anaplasma_inla/scripts/rfunction_inla_myINLA_extract_2.R")
@@ -254,7 +269,7 @@ my_dt_subset_function <- function(DT = NULL, Covar = NULL, Resp = NULL){
 ```{r location_function}
 ### Location format function
 my_location_function <- function(DT = NULL, LOCUTM = FALSE){
-  if(isTRUE(LOCUTM)){
+  if(isFALSE(LOCUTM)){
     require(sp)
     
     c.utm <- as.data.frame(cbind(DT$x.east, DT$y.south))
@@ -310,11 +325,13 @@ my_mesh_function <- function(DT = NULL,
     cat("BNDRY$loc - Y range:", range(BNDRY$loc[,2]), "\n")
   }
   
-  # mesh
-  Mesh = inla.mesh.2d(loc = LOC,
-                      boundary = BNDRY, 
+  # mesh - fmesher replaced the inla.mesh() functions - need to investigate this package more
+ Mesh = fmesher::fm_mesh_2d_inla(
+                      loc = LOC,
+                      boundary = fmesher::fm_as_segm(BNDRY),
                       max.edge = Max_edge,
-                      cutoff = Cutoff)     
+                      cutoff = Cutoff,
+                      offset = Offset)   
   
   cat("Created mesh - X range:", range(Mesh$loc[,1]), "\n")
   cat("Created mesh - Y range:", range(Mesh$loc[,2]), "\n")
@@ -546,7 +563,7 @@ covar <- c("age.years",
 schisto_spatial_df <- schisto_spatial_df %>%
  mutate(log_CAA = log1p(CAA.Estimate))
 
-# Response variables
+# Response variables - T/C ratio isn't actually biologically relevant at this time, but leaving it in as a placeholder for when I want to run multiple models at once
 resp <- c("log_CAA", "T.C.Ratio")
 
 # for inla family - specify accordingly - e.g. "binomial", "Gaussian", "poisson"
@@ -598,8 +615,10 @@ pallete_list <- c("Blues", "BuGn", "BuPu", "GnBu", "Greens", "Greys", "Oranges",
 
 # Including the KNP boundary so that the mesh is 'buffered' around the edges of the park 
 
+# !!! Use meshbuilder() to get an idea of how these affect the mesh, If you look at the code tab there, you could copy that and replace it with our boundary and location data 
+
 # Set global vars
-LOCUTMset = FALSE # because coordinates are already in UTM
+LOCUTMset = TRUE # because coordinates are already in UTM
 toUTMset = FALSE
 spdePriorFlat_set = FALSE #use spde priors - spdePriorFlat
 
@@ -615,23 +634,23 @@ spdepriorsigma_set = c(10, 0.1) #spde prior P(sigma > 5) = 0.1
 # Set mesh edge values
 # Controls triangle size (inner, outer)
 Max_edge_set <- if(isTRUE(LOCUTMset)){
-  #this is inner edge length 1.5km and outer edge length 25km in UTM
-  c(1500, 25000)
+  #this is inner edge length 5km and outer edge length 20km in UTM
+  c(5000, 20000)
 } else {
   c(0.045, 0.09) #latlong 0.03
 }
 
 # Minimum spacing between points
 Cutoff_set <- if(isTRUE(LOCUTMset)){
-  c(1000) #UTM 1000 aka 1000 meters or 1km
+  c(2000) #UTM  2000 aka 2000 meters or 2km
 } else {
   c(0.0045) #latlong 0.003
 }
 
 # Buffer inside/outside boundary
 Offset_set <- if(isTRUE(LOCUTMset)){
-  #this is 5km inside and 10km outside the boundary, in UTM
-  c(5000, 10000)
+  #this is 3km inside and 5km outside the boundary, in UTM
+  c(3000, 5000)
 } else {
   c(0.045, 0.009)
 }
@@ -833,7 +852,7 @@ mod1.list.extract <-
   })
 
 print(mod1.list.extract)
-#save(mod1.list.extract, file = file.path(file_path, "inla.model","mod1.list.extract.R"))
+save(mod1.list.extract, file = file.path(file_path, "inla.model","mod1.list.extract.R"))
 #load(file = file.path(file_path, "inla.model","mod1.list.extract.R"))
 
 # We might include a caterpillar plot here?
@@ -842,7 +861,7 @@ print(mod1.list.extract)
 #HostModelSel <- INLAModelSel(resp[1], covar, "animal.ID", "iid", "Gaussian", Xsub.filter))
 ```
 
-Both models ran - the burden model subset out to only 66 individuals, and the WAIC and DIC values appear to be drastically different between the log(CAA +1) and T/C ratio models.
+Both models ran (even though T/C Ratio isn't all that important) - the burden model subset out to only 65 individuals.
 
 ### Model 2: Add herd or location to the base model
 
@@ -1007,7 +1026,7 @@ mod2.list.extract <-
 # Creating a publication-ready regression table that will be displayed in the console of whatever model objects we've extracted
 texreg::screenreg(mod2.list.extract)
 
-#save(mod2.list.extract, file = file.path(file_path, "inla.model","mod2.list.extract.R"))
+save(mod2.list.extract, file = file.path(file_path, "inla.model","mod2.list.extract.R"))
 #load(file = file.path(file_path, "inla.model","mod2.list.extract.R"))
 
 # See the model 2 code for Henri's code making nice tables for his dissertation!
@@ -1024,7 +1043,7 @@ ggplot(section_effects, aes(x = mean, y = reorder(ID, mean))) +
 # Shows no real difference between section effect
 ```
 
-Both models ran, which is great! It looks like when modeling with log(CAA+1) as the response, BCS is significant, but not when modeling with T/C ratio as the response. 
+Both models ran, which is great!
 
 ### 3 Include spatial effects without herd
 
@@ -1259,44 +1278,44 @@ save(mod3.list.extract, file = file.path(file_path, "inla.model","mod3.list.extr
 #load(file = file.path(file_path, "inla.model","mod3.list.extract.R"))
 
 #texreg::screenreg(mod3.list.extract)
-texreg::texreg(mod3.list.extract,
-               use.packages = FALSE,
-               booktabs = TRUE,
-               d.dolumn = TRUE,
-               sideways = TRUE,
-               float.pos = "ht",
-               caption = "Results from model set 3.",
-               label = "table:ch2_results_full_mod3",
-               file = file.path(file_path, "tables", "ch2_table_results_full_mod3.tex"))
+#texreg::texreg(mod3.list.extract,
+               #use.packages = FALSE,
+               #booktabs = TRUE,
+               #d.dolumn = TRUE,
+              # sideways = TRUE,
+              # float.pos = "ht",
+              # caption = "Results from model set 3.",
+              # label = "table:ch2_results_full_mod3",
+              # file = file.path(file_path, "tables", "ch2_table_results_full_mod3.tex"))
 
-texreg::texreg(mod3.list.extract[c(1: as.integer(length(mod3.list.extract)/2))],
-               booktabs = TRUE,
-               d.dolumn = TRUE,
-               sideways = FALSE,
-               threeparttable = TRUE,
-               table = FALSE,
-               stars = numeric(0),
+#texreg::texreg(mod3.list.extract[c(1: as.integer(length(mod3.list.extract)/2))],
+              # booktabs = TRUE,
+               #d.dolumn = TRUE,
+              # sideways = FALSE,
+              # threeparttable = TRUE,
+              # table = FALSE,
+              # stars = numeric(0),
                #no.margin = TRUE,
                #float.pos = "ht",
                #scalebox = 0.5,
-               use.packages = FALSE,
-               caption.above = TRUE
-               ,file = file.path(file_path, "tables", "ch2_table_results_full_mod3a.tex")
-)
+              # use.packages = FALSE,
+              # caption.above = TRUE
+              # ,file = file.path(file_path, "tables", "ch2_table_results_full_mod3a.tex")
+#)
 
-texreg::texreg(mod3.list.extract[c((as.integer(length(mod3.list.extract)/2)+1):length(mod3.list.extract))],
-               booktabs = TRUE,
-               d.dolumn = TRUE,
-               sideways = FALSE,
-               threeparttable = TRUE,
+#texreg::texreg(mod3.list.extract[c((as.integer(length(mod3.list.extract)/2)+1):length(mod3.list.extract))],
+               #booktabs = TRUE,
+              # d.dolumn = TRUE,
+              # sideways = FALSE,
+              # threeparttable = TRUE,
                #no.margin = TRUE,
                #float.pos = "ht",
-               scalebox = 0.50,
-               table = FALSE,
-               use.packages = FALSE,
-               caption.above = TRUE
-               ,file = file.path(file_path, "tables", "ch2_table_results_full_mod3b.tex")
-)
+               #scalebox = 0.50,
+              # table = FALSE,
+              # use.packages = FALSE,
+              # caption.above = TRUE
+              # ,file = file.path(file_path, "tables", "ch2_table_results_full_mod3b.tex")
+#)
 
 print("now extracting field plots...")
 
@@ -1312,8 +1331,8 @@ mod3.list.plot <-
       ggtitle(resp[x]) +
       theme_classic() +
       my_plot_settings
-    ggField <- ggField + geom_sf(data = bdry.utm, inherit.aes = FALSE, fill = NA, color = "black", linewidth = 1) 
-    data.table::fwrite(ggField$data, file.path(file_path, "inla.model", "dic_fieldplots",
+    ggField <- ggField + geom_sf(data = kruger_shape, inherit.aes = FALSE, fill = NA, color = "black", linewidth = 1) 
+    data.table::fwrite(ggField$data, file.path(file_path, "inla.model", "dic", "dic_fieldplots",
                                                 paste0("mod3_",x,"_fieldplot_dt.csv")))
     ggField 
   })
