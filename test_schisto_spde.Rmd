@@ -7,9 +7,9 @@ output: pdf_document
 
 This document is an attempt to test a less-complex INLA-SPDE model of *Schistosoma* spp. burden (represented via CAA titer) to generate a predictive heat map of burden in African buffalo (*Syncerus caffer*) in Kruger National Park, based off of the code found in the `anaplasma_INLA.Rmd`, `anaplasma_INLA_henri.Rmd`, and `limited_INLA.Rmd` files. 
 
-Here, we'll try to run the INLA model using buffalo schisto CAA titer as the response variable, with demographic factors, Animal ID, management section, and a single environmental variable (likely elevation) as covariates. When working with CAA titers, animals with values < 30 (i.e., negative values) must be removed for analysis. These values also tend to follow a negative binomial distribution, which means the model family can be either negative binomial or gamma
+Here, we'll try to run the INLA model using buffalo schisto CAA titer as the response variable, with demographic factors, Animal ID, management section, and a single environmental variable (likely elevation) as covariates. When working with CAA titers, animals with values < 30 (i.e., negative values) must be removed for analysis. These values also tend to follow a negative binomial distribution, which means the model family can be either negative binomial or gamma. For this initial analysis, we will log transform CAA titer and add 1 to all values (since you can't log transform 0).
 
-## General INLA Setup, Packages, Setting wd, etc.
+### General INLA Setup, Packages, Setting wd, etc.
 
 ```{r setup}
 knitr::opts_chunk$set(
@@ -20,7 +20,7 @@ knitr::opts_chunk$set(
 	warning = FALSE
 )
 
-# On iOS, file paths do not start with "C:/" like on windows, just with a foward slash
+# On iOS, file paths do not start with "C:/" like on windows, just with a forward slash
 knitr::opts_knit$set(root.dir = "/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/Schisto/Schisto_Analysis")
 
 # Packages
@@ -115,7 +115,7 @@ my_plot_settings <-
 #github <- "Schisto_Analysis" # this is the same as the parent directory/github directory already
 ```
 
-These are lines Henri wrote to make sure the github has the necessary directory structure for the code to run appropriately:
+These are lines Henri wrote to make sure the github has the necessary directory structure for the code to run appropriately (these have already been created as of 11 Jan 2026):
 
 ```{r checking-directory-structure}
 # check dir structure - DONE
@@ -126,7 +126,6 @@ These are lines Henri wrote to make sure the github has the necessary directory 
 #if(!file.exists(file.path(file_path, "inla.model", "logfiles"))) dir.create(file.path(file_path, "inla.model", "logfiles"))
 #if(!file.exists(file.path(file_path, "inla.model", "dic", "dic_fieldplots"))) dir.create(file.path(file_path, "inla.model", "dic", "dic_fieldplots"))
 ```
-
 
 These are scripts for doing various things that Henri wrote or adapted. Some are called later, especially for plotting the spatial fields. They can be run in the background with "background jobs > script > run with a copy of global environment > copy to global environment."
 
@@ -148,37 +147,45 @@ Loading in the schisto data, combining with capture locations and environmental 
 ```{r loading-data, echo=FALSE}
 # Load the master data frame
 base_schisto_df<- read.csv("schisto_bym_data.csv")
+# Note: there are 217 observations that are MISSING CAA data - these were below LLOD in the raw data
 
 raster_data <- st_read("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/Anaplasma/gitlab/anaplasma_inla/data/anaplasma_data_with_env_layers_coarsest.gpkg", layer = "cap_with_env")
 
-# Need to merge the schisto data with the capture locations and environmental variables - `raster_data` is on  the left to preserve the spatial data when the files are merged
+# Merging the schisto data with the capture locations and environmental variables
+# Note: All `raster_data` is on the left of the merge to preserve the spatial data when the files are merged
 schisto_spatial_df <- raster_data %>%
-  rename(animal.ID = Animal.ID) %>% # making sure the columns match for merging 
-  select(animal.ID, fall.2023.NDVI, spring.2022.NDVI, elevation, fall.2023.LST.day.mean, fall.2023.LST.night.mean) %>% #selecting only columns of interest
+  rename(animal.ID = Animal.ID) %>% # making sure the column headers match for merging 
+  select(animal.ID,                 # selecting only columns of interest
+         fall.2023.NDVI, 
+         spring.2022.NDVI, 
+         elevation, 
+         fall.2023.LST.day.mean, 
+         fall.2023.LST.night.mean) %>% 
+  
+  # Now adding the rest of the data
   left_join(base_schisto_df, by = "animal.ID") %>%
   select(
-    # Reordering the variables - ID first
-    animal.ID,
-    # Demographics
-    age.years, age.class, Sex, BCS.Average, Section,
-    # Disease variables
-    T.C.Ratio, CAA.Estimate, Result,
-    # Raster data
-    fall.2023.NDVI, spring.2022.NDVI, elevation, 
-    fall.2023.LST.day.mean, fall.2023.LST.night.mean,
-    # Catching anything else I may have missed (geom automatically goes last)
-    everything()
+    animal.ID,                                         # Reordering the variables - ID first
+    age.years, age.class, Sex, BCS.Average, Section,   # Then demographics
+    CAA.Estimate,                                      # Disease variable (response)
+    fall.2023.NDVI, spring.2022.NDVI, elevation,       # Environmental data
+    fall.2023.LST.day.mean, fall.2023.LST.night.mean,  
+    everything()                                       # Catching anything else I may have missed (geom automatically goes last)
   ) %>%
-  # Convert management section to numeric since it'll be used later on as a mixed effect
-  mutate(Section = as.numeric(as.factor(Section))
-         ) %>%
-  # Converting response variable to numerica, rather than an integer for INLA
-  mutate(CAA.Estimate = as.numeric(CAA.Estimate))
+  
+  # Converting management section to numeric since it'll be used later on as a random effect
+  dplyr::mutate(Section = as.numeric(as.factor(Section))) %>%
+  
+  # Converting response variable to numeric, rather than an integer for INLA
+  dplyr::mutate(CAA.Estimate = as.numeric(CAA.Estimate))
 
-# remove spaces
+# Removing a random space from the column name for age
 schisto_spatial_df$age.class <- gsub(" ", "", schisto_spatial_df$age.class)
 
-# Not writing to a df at the moment so variables can be changed out later with ease
+#### NOTE!!! See env_covars_collinearity plot to look at correlation between mean LST day/night, elev, and fall/spring NDVI
+#### Also - only mean night LST looks to be normally distributed, the others do not - is it appropriate to transform them?
+
+# Note: not writing to a df at the moment so variables can be changed out later with ease
 
 # Converting the capture locations back to easting/northing as a matrix, rather than point geometry  - this is how it should be for INLA analysis
 # Get UTM coordinates (not lat/long)
@@ -187,12 +194,28 @@ buff.locations.utm <- st_coordinates(schisto_spatial_df)  # Already in UTM from 
 schisto_spatial_df$x.east <- buff.locations.utm[,"X"]  # UTM Easting
 schisto_spatial_df$y.south <- buff.locations.utm[,"Y"]  # UTM Northing
 
-# Remove geometry
+# Remove geometry from the main data frame
 schisto_spatial_df$geom <- NULL
 
-# adding in the Kruger boundary  - this is Henri's copy of the boundary file, not the one sent from Guy/VWS, as he was having some issues with that version
-# Read the Kruger boundary
-kruger_shape <- st_read("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/Anaplasma/gitlab/anaplasma_inla/shapefiles/bndry_kruger.shp")
+# ----- OPTIONAL: ----- Filtering out negative results so that we ONLY have positives to model schisto burden
+# This is for when CAA is < 20
+positive_only_schisto_df <- schisto_spatial_df %>%
+  dplyr::filter(CAA.Estimate >= 20)
+# Note: this leaves us with only 130 observations
+
+# Can consider randomly imputing values for the 449 negative results (between 1 and 20) so that we don't lose all of our negative results in the process of analysis
+
+# ----- OPTIONAL: ----- creating a unique location identifier and extracting one per unique location
+#schisto_subset_data <- schisto_spatial_df %>%
+  #mutate(location_id = paste(x.east, y.south, sep = "_")) %>%
+  #group_by(location_id) %>%
+  # Randomly select one buffalo per location
+  #slice_sample(n = 1) %>%
+  # Remove grouping
+ # ungroup()
+
+# Read the Kruger boundary - can use newer SANParks boundary - this differs only slightly from the boundary Henri has (its bounding box dimensions are xmin: 283091 ymin: 7175416 xmax: 402511 ymax: 7529638)
+kruger_shape <- st_read("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/SANParks KNP Shapefiles/KNP_polygon/KNP_polygon.shp")
 
 # Transform to UTM Zone 36S (EPSG:32736)
 kruger_utm <- st_transform(kruger_shape, crs = 32736)
@@ -211,46 +234,142 @@ bdry.utm <- inla.mesh.segment(loc = boundary_coords)
 cat("bdry.utm$loc X range:", range(bdry.utm$loc[,1]), "\n")
 cat("bdry.utm$loc Y range:", range(bdry.utm$loc[,2]), "\n")
 
-# Set BdrY for use in functions
-BdrY <- bdry.utm
+```
 
-# Freeing up some memory
-rm(kruger_shape)
-gc()
+Simple data visualization:
+
+This section **should** be updated if/when covariates change!
+
+```{r data-visualization}
+# ----- STEP 1: ----- Load custom visualization functions from the Highland Statistics script
+source("~/Documents/Coding Help/INLA tutorials/highland_stats_INLA_course/AllRCodeInlabru/HighstatLibV14.R")
+
+# ----- STEP 2: ----- Make a series of histograms of the covariates
+# First, convert data from wide to long format
+df_long <- positive_only_schisto_df %>%
+  pivot_longer(cols = c(age.years, BCS.Average, elevation, fall.2023.NDVI, spring.2022.NDVI, fall.2023.LST.day.mean, fall.2023.LST.night.mean), 
+               names_to = "variable",
+               values_to = "value")
+
+# Create multi-panel histogram
+cov_his <- ggplot(df_long, aes(x = value)) +
+            geom_histogram(bins = 30, fill = "steelblue", color = "black") +
+            facet_wrap(~ variable, scales = "free") +  # scales = "free" allows different x/y axes
+            theme_minimal() +
+            labs(title = "Distribution of Covariates",
+                 x = "Value",
+                 y = "Frequency")
+cov_his
+
+# Age is right-skewed and should be log-transformed
+# NDVI is bounded between 0 and 1, so should be logit transformed
+# Elevation and LST (day/night) should be standardized using the `scale()` function.
+# Can consider scaling NDVI - either the raw data or the logit-transformed data
+
+# ----- STEP 3: ----- Look for collinearity
+# Making a list of covariates to plot - start with demographics
+demo_var_to_plot <- c("age.years", "BCS.Average") # can't use sex since is a categorical variable
+
+# Making a list of environmental covariate to plot
+env_var_to_plot <- c("fall.2023.LST.day.mean", "fall.2023.LST.night.mean", "elevation", "fall.2023.NDVI", "spring.2022.NDVI")
+
+# Using the `Mypairs` function from Highland Statistics
+age_vs_bcs <- Mypairs(positive_only_schisto_df[,demo_var_to_plot])
+env_covars_vs <- Mypairs(positive_only_schisto_df[,env_var_to_plot])
+
+# No issues between age and BCS
+# Possible issues with environmental covariates - LST day and fall NDVI have a correlation coefficient of 0.77
+# Fall '23 and spring '22 NDVI have a correlation coefficient of 0.59
+# LST day and LST night have a correlation coefficient of 0.53
+
+# ----- STEP 4: ----- Transform covariates
+# log transforming age using the log1p transformation to avoid taking the log of 1 (which = 0)
+positive_only_schisto_df$log.age <- log1p(positive_only_schisto_df$age.years)
+
+# logit transforming spring '22 and fall '23 NDVI
+library(boot)
+positive_only_schisto_df$fall.23.NDVI.logit <- logit(positive_only_schisto_df$fall.2023.NDVI)
+positive_only_schisto_df$spring.22.NDVI.logit <- logit(positive_only_schisto_df$spring.2022.NDVI)
+
+# Note: The histograms of both stil show a left skew (fall '23) and a bimodal distribution (spring '22)
+
+# Standardizing elevation and day/night 2023 mean LST - using z-scores
+# the [,1] after the `scale()` function makes R return a vector instead of a matrix (R typically returns a matrix)
+positive_only_schisto_df$elevation.std <- scale(positive_only_schisto_df$elevation)[,1]
+positive_only_schisto_df$LST.day.std <- scale(positive_only_schisto_df$fall.2023.LST.day.mean)[,1]
+positive_only_schisto_df$LST.night.std <- scale(positive_only_schisto_df$fall.2023.LST.night.mean)[,1]
+
+```
+
+
+### Setting INLA values - priors, mesh values, etc.
+
+This code chunk defines all spatial modeling parameters (e.g., mesh resolution, spatial priors) before running the models.
+
+```{r inla_lists_setup}
+###
+# Setting priors and mesh values
+###
+
+# Including the KNP boundary so that the mesh is 'buffered' around the edges of the park 
+
+#### ! Use meshbuilder() to get an idea of how these affect the mesh, If you look at the code tab there, you could copy that and replace it with our boundary and location data 
+
+# ===== COORDINATE SYSTEM SETTINGS =====
+LOCUTMset = TRUE # True = Coordinates are already in UTM (no transformation needed)
+toUTMset = FALSE # (Currently unused - legacy parameter)
+
+# ===== SPATIAL PRIOR SETTINGS =====
+spdePriorFlat_set = FALSE # False = use spde priors or PC (penalized complexity) priors; true = flat or non-informative priors
+# False or PC priors is better for sparse data, penalizes overly complex spatial patterns
+
+# **Range Prior**: How far does spatial correlation extend?
+# Can use the mod3 INLA range output figure to help decide what a reasonable range might be, too
+spdepriorrange_set = c(12500, 0.5) # Context that may inform this prior: buffalo home ranges, river systems, local habitat similarities
+
+# **Sigma Prior**: How much does the spatial field vary?
+# on the scale of the response variable (so consider log-transformed resp vars)
+spdepriorsigma_set = c(3, 0.1) # On a log scale, sigma of 5 is fairly large
+
+# ===== MESH RESOLUTION SETTINGS =====
+# These control the trade-off between spatial detail and computation speed
+
+# *Max Edge**: Triangle side length [inner region, outer buffer]
+Max_edge_set <- if(isTRUE(LOCUTMset)){
+  c(5000, 20000) # 5km triangles inside boundary, 20km in outer extension
+  # 5km resolution captures local-scale patterns (e.g., rivers, habitat patches)
+  # 20km outer edges reduce nodes in less important buffer region
+} else {
+  c(0.045, 0.09) # Lat/long equivalent (if coordinates weren't in UTM, which they should be)
+}
+
+# **Cutoff**: Minimum distance between mesh nodes
+Cutoff_set <- if(isTRUE(LOCUTMset)){
+  c(2000) # Nodes must be greater than/equal to 2km apart
+  # Prevents mesh from being too dense
+  # At present, with 360 observations over ~20,000km sq, 2km spacing is reasonable
+} else {
+  c(0.0045) #Lat/long equivalent
+}
+
+# **Offset**: How far to extend mesh beyond the boundary [inner, outer]
+Offset_set <- if(isTRUE(LOCUTMset)){
+  c(3000, 5000)    # 3km inner buffer, 5km outer buffer
+  # Inner buffer: ensures smooth spatial field near boundary
+  # Outer buffer: handles edge effects, allows extrapolation beyond the border
+  # Smaller offsets = fewer nodes = faster computation
+} else {
+  c(0.045, 0.009) # Lat/long equivalent
+}
+  
 ```
 
 ### Henri's Helper Functions
 
-These are a couple of functions Henri wrote to help construct the various INLA components.
+These are a couple of functions Henri wrote to help construct the various INLA components. These must be loaded in some fashion in order to run the models later on.
 
 \begin{itemize}
-  \item \textbf{Model Matrix Function:} a function to make the model matrix that converts all integers and factors to characters, creates a scaffolding for a matrix without an intercept, drops the first column (becomes the reference) to avoid multicollinearity - creating dummy variables for the other categories associated with that covariate, and produces a data frame ready to be used for modeling later on (used in the `inla.stack()` command)
-  \item This is necessary for SPDE models because you have to manually specify the covariate structure, and with SPDE you drop your base (reference) levels because you will also manually specify an explicit intercept for the model
-\end{itemize}
-
-```{r modelmatrix_function}
-#####
-# FUNCTION: my_modelmatrix
-####
-# used in Stack generation below
-my_modelmatrix_function <- function(DT = NULL, Covar = NULL, CatVarSub = NULL){
-# make the matrix    
-DT[,covar] %>% dplyr::mutate(across(where(is.factor), as.character),
-                             across(where(is.integer), as.character)) -> DT.modmatrix
-X0 <- model.matrix(as.formula(paste0(" ~ -1 + ", paste(Covar, collapse = " + "))),
-                   data = DT.modmatrix)
-X <- as.data.frame(X0[,-which(colnames(X0)%in%c(colnames(X0)[1]))]) # Eliminate the base levels of categorical variables (we specify an explicit intercept in the model formula later on)
-X
-}
-
-# Henri test example
-#X <- my_modelmatrix_function(DT = ch2data, Resp = resp[3], Covar = covar, CatVarSub = "capture.year2009")
-
-### END ###
-```
-
-\begin{itemize}
-  \item \textbf{Subset Function:} a function to basically only include rows with complete values for certain variables
+  \item \textbf{Subset Function:} a function to basically only include rows with complete values for certain variables (somewhat redundant, as subsetting options are included within the model code)
 \end{itemize}
 
 ```{r subset_function}
@@ -264,6 +383,7 @@ my_dt_subset_function <- function(DT = NULL, Covar = NULL, Resp = NULL){
 
 \begin{itemize}
   \item \textbf{Location Format Function:} a function that transforms any coordinates from lat/long to UTM if necessary, returns them as a matrix
+  \item Necessary when coordinates aren't already in UTM (if LOCUTM = FALSE) - recall that LOCUTMset = TRUE earlier, meaning that we \textit{already} set the coordinates to UTM; in the later code chunks, LOCUTM = ? is asking if we \textit{need} to transform to UTM
 \end{itemize}
 
 ```{r location_function}
@@ -280,8 +400,8 @@ my_location_function <- function(DT = NULL, LOCUTM = FALSE){
     
     c.utm <- spTransform(c.utm, CRS("+proj=utm +zone=36 ellps=WGS84"))
     
-    # Try extracting coordinates differently
-    LOC <- coordinates(c.utm)  # Use the coordinates() function instead
+    # Extracting the coordinates themselves
+    LOC <- coordinates(c.utm)  
     
   } else {
     LOC <- cbind(DT$x.east, DT$y.south)
@@ -292,110 +412,265 @@ my_location_function <- function(DT = NULL, LOCUTM = FALSE){
 ```
 
 \begin{itemize}
-  \item \textbf{Spatial Mesh Function:} a function that constructs the spatial mesh using the subsetted data and GPS coordinates that have been run through the above two functions
+  \item \textbf{Spatial Mesh Function:} a function that constructs the spatial mesh using the subset data, GPS coordinates, and mesh resolution values that have been run through the above functions; this mesh provides the "basis functions" used to approximate the continuous spatial surface over which we're modeling (effectively the "resolution" of the spatial field)
+  \item If the `max.edge` is significantly larger than the estimated spatial range (the distance at which points stop being correlated), the mesh will be too coarse to "see" a spatial pattern; conversely, a significantly smaller `max.edge` only increases computational time/effort without providing much new information to the model
+  \item \textbf{Key Mesh Parameters:}
+  \begin{itemize}
+    \item loc: Observation locations - the mesh will include these points
+    \item boundary: Study area boundary (e.g., Kruger border) - constrains mesh extent
+    \item max.edge: Controls triangle size (resolution)
+    \begin{itemize}
+      \item First value: max edge length INSIDE the boundary (smaller = finer resolution)
+      \item Second value: max edge length in OUTER extension (can be coarser)
+      \item Example: c(5000, 30000) = 5km triangles inside, 30km outside
+    \end{itemize}
+    \item cutoff: Minimum allowed distance between mesh nodes
+    \begin{itemize}
+      \item Prevents nodes from being too close together
+      \item Larger cutoff = fewer nodes = faster computation
+      \item Example: 3000 = nodes must be at least 3km apart
+    \end{itemize}
+    \item offset: How far to extend the mesh beyond the boundary
+    \begin{itemize}
+      \item First value: inner extension (moderate buffer)
+      \item Second value: outer extension (wide buffer to handle edge effects)
+      \item Example: c(10000, 30000) = 10km inner buffer, 30km outer buffer
+      \item Extensions help avoid edge effects in spatial modeling
+    \end{itemize}
+  \end{itemize}
 \end{itemize}
 
 ```{r mesh_function}
 ####
 # Mesh function
 ####
-my_mesh_function <- function(DT = NULL,
-                             Covar = NULL,
-                             Resp = NULL,
-                             LOCUTM = FALSE,
-                             toUTM = NULL,
-                             BNDRY = NULL,
-                             Max_edge = NULL,
-                             Cutoff = NULL,
-                             Offset = NULL,
-                             DTsubset = FALSE){
+my_mesh_function <- function(DT = NULL,          # Data frame with observations
+                             Covar = NULL,       # Covariate names (for subsetting)
+                             Resp = NULL,        # Response variable name (for subsetting)
+                             LOCUTM = FALSE,     # Are coordinates in UTM or do they need conversion? (T/F)
+                             toUTM = NULL,       # Currently unused parameter, not sure what Henri did with this
+                             BNDRY = NULL,       # Boundary object defining the study area limits (here is `kruger_shape`)
+                             Max_edge = NULL,    # Maximum triangle edge length [inner, outer], set previously
+                             Cutoff = NULL,      # Minimum distance between edge nodes, set previously
+                             Offset = NULL,      # Extension beyond boundary [inner, outer], set previously
+                             DTsubset = FALSE){  # Should the data be subset to complete cases? (optional)
   
+  # ===== STEP 1: OPTIONAL DATA SUBSETTING =====
+  # If DTsubset=TRUE, remove rows with missing values in covariates or response (presumably we've already done this)
+  # Actual subsetting is taken care of with the `my_dt_subset_function` code
+  # This ensures the mesh is built only for locations with complete data
   if(isTRUE(DTsubset)){
-  # subset data set
+  # Removes NAs so mesh nodes are only placed where we have usable data
   DT <- my_dt_subset_function(DT, Covar = Covar, Resp = Resp)
   } 
-  # location
+  
+  # ===== STEP 2: EXTRACT LOCATION COORDINATES =====
+  # Get X,Y coordinates for all observations
+  # These are the "knots" - actual data points where observations were made
+  # The mesh will be constrained to cover these locations plus surrounding area within KNP
   LOC <- my_location_function(DT = DT, LOCUTM = LOCUTM)
   
+  # Debug output to verify coordinates are in the expected range
+  # For KNP UTM: X should be ~280k - 400k, Y should be ~7.1M - 7.5M
   cat("LOC in mesh function - X range:", range(LOC[,1]), "\n")
   cat("LOC in mesh function - Y range:", range(LOC[,2]), "\n")
   
+  # ===== STEP 3: VERIFY BOUNDARY COORDINATES =====
+  # Check that the boundary coordinates match the data coordinate system to make sure everything is projecting correctly
+  # Mismatched coordinate systems will create an invalid mesh
   if(!is.null(BNDRY)) {
     cat("BNDRY$loc - X range:", range(BNDRY$loc[,1]), "\n")
     cat("BNDRY$loc - Y range:", range(BNDRY$loc[,2]), "\n")
   }
   
-  # mesh - fmesher replaced the inla.mesh() functions - need to investigate this package more
+  # ===== STEP 4: CREATE THE MESH =====
+  # This is the core function that builds the triangular mesh
+  # NOTE: fmesher package replaced the old INLA mesh functions
+  # fm_mesh_2d_inla is the modern equivalent of inla.mesh.2d
  Mesh = fmesher::fm_mesh_2d_inla(
-                      loc = LOC,
-                      boundary = fmesher::fm_as_segm(BNDRY),
-                      max.edge = Max_edge,
-                      cutoff = Cutoff,
-                      offset = Offset)   
+                      loc = LOC,                               # Observation coordinates (n x 2 matrix)
+                      boundary = fmesher::fm_as_segm(BNDRY),   # Convert boundary to fmesher format
+                      max.edge = Max_edge,                     # Triangle size control [inner, outer]
+                      cutoff = Cutoff,                         # Minimum node spacing
+                      offset = Offset)                         # Boundary extensions [inner, outer]
   
+  # ===== STEP 5: VERIFY MESH COORDINATES =====
+  # Check that mesh was created in the correct coordinate system
+  # Mesh coordinates should match LOC and BNDRY coordinates
   cat("Created mesh - X range:", range(Mesh$loc[,1]), "\n")
   cat("Created mesh - Y range:", range(Mesh$loc[,2]), "\n")
   
+  # ===== STEP 6: RETURN THE MESH =====
+  # The mesh object contains:
+  # $loc, the coordinates of all mesh vertices (nodes)
+  # $graphh, the triangulation structure (which nodes connect to which)
+  # $n, the total number of mesh nodes
+  # This mesh will be used to create the SPDE model and projection matrix (A)
   Mesh
 }
 
 ### END FUNCTION ###
 ```
 
+Here is a code chunk aiming to use INLA's `meshbuilder()` function to see how changes in priors, edges, and cutoff values affect the mesh, and what might fit best with this data. This function opens a `Shiny()` app, creating a new window in which you can work interactively to change the mesh, without writing any code. After you're happy with the mesh, you can copy the code over into the body of the .Rmd file.
+
+```{r mesh-builder}
+library(shiny)
+
+#extracting buffalo locations
+mesh.loc <- my_location_function(DT = dt.sub, LOCUTM = TRUE)
+
+# Launch meshbuilder  - it opens the new window that lets you select your spatial elements individually
+meshbuilder()
+```
+
 \begin{itemize}
-  \item \textbf{SPDE Function:} a function that compiles the spde point framework using the mesh made in the previous step; you can set spatial priors here if need be
+  \item \textbf{SPDE Function:} a function that creates a Stochastic Partial Differential Equation (SPDE) model, which defines how the spatial field varies across the study area (KNP)
+  \item Specifies the spatial correlation structure with a Matérn covariance (aka continuous "spatial glue," describes how the correlation between 2 points decays as the distance between them increases) can be expressed as a \textit{solution} to an spde
+  \item The spde equation is solved using the mesh constructed above, creating a sparse Gaussian Markov Random Field (GMRF, a type of mathematical "engine") approximation of a more continuous (and computationally challenging) Matérn process
 \end{itemize}
 
 ```{r spde_function}
 ####
-# spde function - defines the spatial random field on a mesh
+# spde function - here is where we set SPDE priors and controls
 ###
-# SET SPDE PRIOR HERE IF NEED BE
+
 my_spde_function <- function(Mesh, spdePriorFlat = TRUE,
                              spdepriorrange = NULL,
                              spdepriorsigma = NULL){
   
+  # ===== OPTION 1: FLAT (VAGUE) PRIORS =====
+  # Uses default INLA priors - less informative, lets data drive estimates
+  # Good for when you have no prior knowledge about spatial patterns that might be in the system
+  # Drawback can lead to overfitting or unrealistic spatial range estimates  
   if(isTRUE(spdePriorFlat)){
   buff.Hosts.spde = inla.spde2.matern(mesh = Mesh)
-  } else {
-  buff.Hosts.spde = inla.spde2.pcmatern(mesh = Mesh, 
-                            prior.range = spdepriorrange,
-                            prior.sigma = spdepriorsigma)
+  # Creates Matérn SPDE model with default priors
+  # Matérn covariance is the standard choice for spatial modeling
+  # Assumes spatial correlation decays smoothly with distance
+  }
+  
+  # ===== OPTION 2: PENALIZED COMPLEXITY (PC) PRIORS =====
+  # Uses informative priors based on prior knowledge of the study system
+  # PC priors penalize complexity - in stats, it's good practice to prefer simpler models unless data strongly suggests otherwise
+  # Good for when you have scientific knowledge about the spatial scale of whatever processes you're trying to model
+  # This bit of code says what to do if the spdePriorFlat is FALSE - use the priors we set earlier in our INLA list setup!
+  else {
+  buff.Hosts.spde = inla.spde2.pcmatern(
+    mesh = Mesh, 
+    prior.range = spdepriorrange,     # Prior for spatial range parameter (spatial correlation decay distance)
+    prior.sigma = spdepriorsigma)     # Prior for field variance parameter (marginal std. dev of spatial field, aka size of variability)
   }
   
   return(buff.Hosts.spde)
 }
 
-# flat prior = default Matern SPDE
-# custom prior (PriorFlat = FALSE) = need to specify range (spatial correlation decay distance, how quickly the correlation drops with distance) and sigma (marginal standard dev of spatial field aka size of variability)
-
 ### END FUNCTION ###
 ```
 
+**Understanding the Parameters**
 \begin{itemize}
-  \item \textbf{Data Stack Function:} a function that stacks all of the data - the fitted and predicted values; this function should be updated if any effects (random, mixed, etc.) are changed so the model knows what to pull.
+  \item Spatial range (p): this defines the distance at which the spatial correlation becomes weak
+  \begin{itemize}
+    \item Aka, "How far apart can two locations be before they're independent?"
+    \item Small ranges (e.g., 2km) mean that spatial patterns change rapidly and are very localized
+    \item Large ranges (e.g., 50km) mean that spatial patterns are broad, and values may be similar even when far apart in space
+    \item In this system, we might expect intermediate ranges (5-20km) because animals move locally or broadly, depending on resource availability; however, rivers/habitats affect local areas similarly
+  \end{itemize}
+  \item Prior range specification: given in the format c(p0, p<p), ex: c(10000, 0.5)
+  \begin{itemize}
+    \item This means that for a range of 10,000m or 10km (p0), there is a 50% probability that the range is less than 10km
+    \item Aka "We think spatial correlation decays within 10km, but we're not certain - it could be more or less"
+  \end{itemize}
+  \item Sigma: this is the marginal standard deviation of the spatial random field, or how much spatial variability exists within the study area
+  \begin{itemize} 
+    \item A small sigma (e.g., 0.1) means that the spatial field has little variability - the spatial effect is weak
+    \item A large sigma (e.g., 2.0) means that the spatial field varies a lot - the spatial effect is strong
+    \item If the response variable is on a log scale, a sigma of 0.5 means that the locations can differ by 0.5 log units due to spatial effects alone
+  \end{itemize}
+  \item Prior sigma specification: given in the format c(sigma, p > sigma), or c(1, 0.1)
+  \begin{itemize}
+    \item At a sigma of 1, there is a 10% probability that sigma exceeds 1
+    \item Aka, "We think the spatial variability is moderate (<1) because we only think there is a 10% chance it's very large"
+  \end{itemize}
+\end{itemize}
+
+\begin{itemize}
+  \item \textbf{Model Matrix Function:} a function to make the model matrix that converts all integers and factors to characters, creates a scaffolding for a matrix without an intercept, drops the first column (becomes the reference) to avoid multicollinearity - creating dummy variables for the other categories associated with that covariate - and produces a data frame ready to be used for modeling later on (used in the `inla.stack()` command), typically as a "1" in the A list of `inla.stack`
+  \item This is similar to MLR, in which the model matrix `X` maps the coefficients directly to the observations since those covariates are measured at the exact same locations as the response variable
+  \item This is necessary for SPDE models because you have to manually specify the covariate structure, and with SPDE you drop your base (reference) levels because you will also manually specify an explicit intercept for the model
+\end{itemize}
+
+```{r modelmatrix_function}
+#
+# FUNCTION: my_modelmatrix
+#
+# used in Stack generation below
+my_modelmatrix_function <- function(DT = NULL, Covar = NULL, CatVarSub = NULL){
+
+# Convert any factors or integers to characters (so dummy vars are created in the matrix) 
+# Note: this creates ONE, BINARY covariate per each character level - e.g., SexMale, SexFemale for `Sex`, which has 2 levels
+# This is because in Bayesian stats, it's best practice to include a column for each level, with EACH representing that level's deviation from the global mean (i.e., the intercept)
+# E.g., `SexMale` is the deviation from the mean associated with males, and `SexFemale` is the deviation from the overall mean associated with females
+DT[,Covar] %>% dplyr::mutate(across(where(is.factor), as.character),
+                             across(where(is.integer), as.character)) -> DT.modmatrix
+  
+X0 <- model.matrix(as.formula(paste0(" ~ -1 + ", paste(Covar, collapse = " + "))),
+                   data = DT.modmatrix)
+
+# Remove columns that are literally "(Intercept)" if they exist
+X <- as.data.frame(X0[, !colnames(X0) %in% "(Intercept)"])
+X
+}
+
+# Testing the output to make sure no covariates are dropped
+#X_test <- my_modelmatrix_function(DT = positive_only_schisto_df, Covar = covar_mod1)
+
+### END ###
+```
+
+Now that we have the model matrix and our projection (A) matrix, it's time to define a function for making the INLA stack. This is how the model expects to "see" all of the components.
+
+\begin{itemize}
+  \item \textbf{Data Stack Function:} a function that stacks all of the data - the response variable, covariates, and spatial indices together; this function should be updated if any effects (random, mixed, etc.) are changed so the model knows what to pull.
+  \item The `inla.stack` function also allows you to include "NA" values for locations where you want the model to predict values in your prediction stack
+  \item NOTE: the `inla.stack()` function requires \textbf{non-empty A and effects lists} to construct the data structure properly. For Model 1, which contains only fixed effects (no random or spatial effects), there is a minimal placeholder index (idx = 1:n) in the effects list with an identity projection matrix - this placeholder is NOT included in the model formula and has no impact on model estimation; it just satisfies INLA's structural requirements for including that component of the stack object
 \end{itemize}
 
 ```{r stack_function}
 ####
 # Stack function
 ####
-my_stack_function <- function(DT = NULL, Mod.Matrix = NULL, Covar = NULL, Resp = NULL, GroupVar = NULL, spdePriorFlat = TRUE, spdepriorrange = NULL, spdepriorsigma = NULL, LOCUTM = NULL, Mesh.list = NULL, BNDRY = NULL,  Max_edge = Max_edge_set, Predict = FALSE, include_section = NULL, include_spatial = NULL){
+
+my_stack_function <- function(
+    DT = NULL, 
+    Mod.Matrix = NULL, 
+    Covar = NULL, 
+    Resp = NULL, 
+    GroupVar = NULL, 
+    spdePriorFlat = FALSE, 
+    spdepriorrange = NULL, 
+    spdepriorsigma = NULL, 
+    LOCUTM = NULL, 
+    Mesh.list = NULL, 
+    BNDRY = NULL,  
+    Max_edge = Max_edge_set, 
+    Predict = FALSE,         # Where you update when you want the model to generate the prediction outputs
+    include_section = NULL,  # Where you'd want to update if your random effect (in this case, section) changes
+    include_spatial = FALSE){ # Default is set to false so spde elements don't get included in models 1 and 2
   
-  # location
+  # ===== STEP 1: GET LOCATION COORDINATES =====
+  # Extract spatial coordinates (X, Y) from data
+  # If LOCUTM=TRUE, transforms lat/long to UTM; if FALSE, uses existing coordinates
   LOC <- my_location_function(DT = DT, LOCUTM = LOCUTM)
   
-  cat("LOC dimensions:", dim(LOC), "\n")
-  cat("nrow(DT):", nrow(DT), "\n")
-  cat("First few rows of LOC:\n")
-  print(head(LOC))
+  # ===== OPTIONAL: CREATE ID VARIABLES FOR RANDOM EFFECTS =====
+  # See Henry's code `_hjc` for an example
   
-  Mesh = Mesh.list
-  
-  NiD <- as.numeric(as.factor(DT$animal.ID))
-  SNiD <- as.numeric(as.factor(DT$animal.ID)) + max(as.numeric(as.integer(DT$animal.ID)))
-  
-  # Build effects list conditionally
+  # ===== STEP 3: PREPARE THE COVARIATE MATRIX =====
+  # Convert the model matrix "X" (which contains covariates like Sex, BCS, age, etc.) from a matrix into a list of individual named columns
+  # This allows INLA to reference covariates by name (e.g., "SexFemale")
+  # The model matrix was created outside this function in the `my_modelmatrix_function`
   if(!is.null(Mod.Matrix)) {
     X_list <- as.list(as.data.frame(Mod.Matrix))
     names(X_list) <- colnames(Mod.Matrix)
@@ -403,199 +678,262 @@ my_stack_function <- function(DT = NULL, Mod.Matrix = NULL, Covar = NULL, Resp =
       X_list <- list()
     }
   
-  effects_list <- c(
-  list(
-    Intercept = rep(1, nrow(DT)),
-    animal.numid = NiD,
-    animal.slopeid = SNiD
-  ),
-  X_list  #Adds the covariates as separate elements
-)
+  # ===== STEP 4: BUILD EFFECTS LIST FOR ALL MODELS =====
+  # Here we put all of the fixed effects into one list
+  # If a variable is in the formula, it must live in effects, not data
+  fixed_effects <- c(
+    list(Intercept = rep(1, nrow(DT))),
+    X_list
+    )
   
-  #effects_list <- list(
-   # Intercept = rep(1, nrow(DT)),
-    #X = Mod.Matrix,
-    #animal.numid = NiD,
-    #animal.slopeid = SNiD
-  #)
+  # Start with fixed effects as FIRST element
+  # Effects list = what lives where
+  effects_list <- list(fixed_effects)
   
-  A_list <- c(list(1, 1, 1), rep(list(1), length(X_list)))  # Base A list
+  # ===== STEP 6: INITIALIZE A LISTS =====
+  # A list = how the things in the effects list are projected onto the observations
+  A_list <- list(1)  # ONE projection for ALL fixed effects
   
-  # if section is requested
+  # ===== STEP 5: (OPTIONAL) ADD HERD-LEVEL RANDOM EFFECT =====
+  # This code is set up to include park section as a random effect
   if(include_section) {
-  NSection <-  as.numeric(as.factor(DT$Section))
-  effects_list$section.num <- NSection
-  A_list <- c(A_list, 1)
-  }
-  
-  # if a spatial component is requested
-  if(include_spatial) {
-  LOC <- my_location_function(DT = DT, LOCUTM = LOCUTM)
-  Mesh = Mesh.list
-  
-  if(!is.null(GroupVar)){
-    buff.HostsA <- inla.spde.make.A(Mesh, loc = LOC, 
-                                    group = as.numeric(as.factor(DT[,GroupVar])))
-  } else {
-    buff.HostsA <- inla.spde.make.A(Mesh, loc = LOC)
-  }
-  
-  cat("buff.HostsA dimensions:", dim(buff.HostsA), "\n")
-  
-  buff.Hosts.spde <- my_spde_function(Mesh,
-                                      spdePriorFlat = spdePriorFlat,
-                                      spdepriorrange = spdepriorrange,
-                                      spdepriorsigma = spdepriorsigma)
+    NSection <- as.numeric(as.factor(DT$Section))
+    effects_list <- c(effects_list, list(list(section.num = NSection)))  # SECOND element
+    A_list <- c(A_list, list(1))  # SECOND identity projection for section
+    }
 
-  cat("Expected: 66 rows x", buff.Hosts.spde$n.spde, "columns\n")
-  
-  # Create spatial index - extract only the FIRST component
-  s.index <- inla.spde.make.index(name = "spatial.field",
-                                  n.spde = buff.Hosts.spde$n.spde)
-  
-  # Add spatial components to existing lists
-  spatial_effects <- list(spatial.field = s.index$spatial.field)
-  A_list <- c(A_list, list(buff.HostsA))
-  }
-  
-  # Create the stack (same structure for both spatial and non-spatial)
+  # ===== STEP 7: ADD SPATIAL COMPONENT (ONLY IF REQUESTED)
+  # This is where spatial random effects are added via SPDE
   if(include_spatial) {
-  # Add spatial to the existing effects_list
-    effects_list_combined <- c(effects_list, spatial_effects)
-    } else {
-    effects_list_combined <- effects_list
+    
+    # Get location coordinates again (redundant, but ensures correct coordinates)
+    LOC <- my_location_function(DT = DT, LOCUTM = LOCUTM)
+    Mesh = Mesh.list
+  
+    # ===== CREATE PROJECTION MATRIX A =====
+    # buff.HostsA is the KEY matrix that projects observation locations onto the mesh (not to be confused with the A matrix earlier)
+    # It's a sparse matrix: [n_observations × n_mesh_nodes]
+    # Each row corresponds to one observation; columns are mesh vertices
+    # Values indicate how much each mesh node contributes to that observation
+    if(!is.null(GroupVar)){
+    # If there's a grouping variable (e.g., year), create grouped spatial effects (we don't have this currently)
+      buff.HostsA <- inla.spde.make.A(Mesh, 
+                                    loc = LOC, 
+                                    group = as.numeric(as.factor(DT[,GroupVar])))
+      } else {
+      # Standard case: just project locations onto mesh
+      buff.HostsA <- inla.spde.make.A(Mesh, loc = LOC)
+      }
+  
+     cat("buff.HostsA dimensions:", dim(buff.HostsA), "\n")
+  
+    # ===== CREATE SPDE MODEL =====
+    # This defines the spatial correlation structure
+    # Pulls in our previously specified priors for range (how far spatial  autocorrelation extends) and sigma (field variance)
+     buff.Hosts.spde <- my_spde_function(Mesh,
+                                        spdePriorFlat = spdePriorFlat,
+                                        spdepriorrange = spdepriorrange,
+                                        spdepriorsigma = spdepriorsigma)
+
+    # ===== CREATE SPATIAL FIELD INDEX =====
+    # s.index assigns an index number to each mesh node
+    # This creates the "spatial.field" variable that can be used in formulas
+    # Extract only the FIRST component (see below)
+    s.index <- inla.spde.make.index(name = "spatial.field",
+                                    n.spde = buff.Hosts.spde$n.spde)
+  
+    # Extract only the spatial field indices (not group or replicate components) and add to effects list as another element
+    effects_list <- c(effects_list, list(spatial.field = s.index$spatial.field))
+  
+    # Add the spatial projection matrix `buff.HostsA` to `A_list`
+    # This is the actual spatial component of the projection matrix now that is being COMBINED with the identity projection list we made earlier
+    A_list <- c(A_list, list(buff.HostsA))
     }
   
-  #Build the stack
+ # ===== STEP 9: DEBUG OUTPUT =====
+  cat("\n=== INSIDE STACK FUNCTION - PRE-STACK ===\n")
+  cat("nrow(DT):", nrow(DT), "\n")
+  cat("length(y):", length(DT[,Resp]), "\n")
+  #cat("\nA_list length:", length(A_list), "\n")
+  cat("effects_list length:", length(effects_list), "\n")
+  if(length(effects_list) > 0) {
+    cat("effects_list names:", paste(names(effects_list), collapse=", "), "\n")
+  }
+  cat("=========================================\n\n")
+
+  # ===== STEP 10: BUILD THE INLA STACK =====
+  # The INLA stack packages together 3 things:
+  # The data, or the response variable (y)
+  # The A list, or the list of projection matrices (how to map effects to observations)
+  # The effects, or a list of all predictor variables and indices
+  # INLA uses this "stack" structure to understand the model's data organization
+  
+  stack_data <- list(y = DT[,Resp])  # the stack data contains ONLY the response variable, `y`
+
   stack_model <- inla.stack(
-    data = list(y = DT[,Resp]),
-    A = A_list,
-    effects = effects_list_combined,
-    tag = "stack_model"
+    data = stack_data,                # Only `y`
+    A = A_list,                       # All projection matrices
+    effects = effects_list,           # All identity projections (if included)
+    tag = "model_stack"               # Name tag for this specific stack (as opposed to "predicted stack")
     )
   
-  ## stack predict
+  cat("\n=== DEBUGGING STACK INTERNALS ===\n")
+  cat("Checking effects_list before stack creation:\n")
+  
+  cat("\n=== IMMEDIATELY AFTER STACK CREATION ===\n")
+  test_data <- inla.stack.data(stack_model)
+  cat("Test extraction - y length:", length(test_data$y), "\n")
+  cat("Test extraction - Intercept length:", length(test_data$Intercept), "\n")
+  cat("========================================\n\n")
+
+  if (!isTRUE(Predict)) {
+  return(stack_model)
+  }
+  
+  # ===== STEP 11: CREATE THE PREDICTION STACK (OPTIONAL) =====
+  # If Predict=TRUE, create a second stack for making predictions
+  # This has the same structure but with y=NA (unknown values to predict)
   if(isTRUE(Predict)){
   
-  # Build prediction effects list conditionally
-    pred_effects_list <- list(
-      Intercept = rep(1, nrow(DT)),
-      X = Mod.Matrix,
-      animal.numid = NiD,
-      animal.slopeid = SNiD
+    # Build prediction effects list conditionally (same structure as model effects)
+    pred_fixed_effects <- c(
+      list(Intercept = rep(1, nrow(DT))),
+      as.list(as.data.frame(Mod.Matrix))
       )
-  
-    pred_A_list <- list(1, 1, 1, 1)
-  
-  # Add section if included
+    
+    pred_effects_list <- list(pred_fixed_effects)
+    pred_A_list <- list(1)
+    
+    # Add section (or other random effect) if it was included in the model
     if(include_section) {
-      pred_effects_list$section.num <- NSection
-      pred_A_list <- c(pred_A_list, 1)
-      }
+        pred_effects_list <- c(pred_effects_list, list(section.num = NSection))
+        pred_A_list <- c(pred_A_list, list(1))  # Use list(1), not just 1 to give it it's own identity projection
+        }
   
-  # Add spatial component if included
-    if(include_spatial) {
-      pred_effects_list$spatial.field <- s.index
-      pred_A_list <- c(pred_A_list, list(buff.HostsA))
-      }
+   # Add spatial component if it was included in the model
+   if(include_spatial) {
+        pred_effects_list <- c(pred_effects_list, list(spatial.field = s.index$spatial.field))
+        pred_A_list <- c(pred_A_list, list(buff.HostsA))
+        }
   
+    # Create prediction stack with NA response values
     stack_predict <- inla.stack(
-      data = list(y = NA),
+      data = list(y = NA),             # Unknown values to predict
       A = pred_A_list,
       effects = pred_effects_list,
-      tag = "stack_predict"
-    )
+      tag = "stack_predict"            # Different tag to distinguish from the model stack
+      )
   
-  # Join stacks
+  # Combine model and prediction stacks
+  # INLA will fit the model using `stack_model` data
+  # Then use `stack_predict` structure to generate predictions
   return(inla.stack(stack_model, stack_predict))
-} else {
-  return(stack_model)
-}
+  } 
+}  
+    ### END of FUNCTION ###
 
-  ### END of FUNCTION ###
-}
-
-### END ###
 ```
 
-### Defining the model formulas, in increasing order of complexity from 1 - 3. These should be updated if any changes to effects occur, as well. Defining model variables as well.
+### Defining model variables:
 
-```{r inla-model-formulas}
-####
-# Sets of formulas a - c (each letter is a set of models from least to most complex)
-####
+This next code chunk serves to define all variables and some settings for the INLA models, making them easy to modify in one code chunk later on. 
 
-# base set (no herd) effects and mixed effect for animal id
-set1.a <- paste0("y ~ -1 + Intercept + ")
-set1.c <- paste0(" +  f(animal.numid, model = 'iid', hyper = pcprior)") 
-set1.d <- paste0(" +  f(animal.numid, model = 'iid')") 
-
-# mod2 + add grouping such as herd or area 
-# add mixed effect for management section - are more likely to be spending time here as opposed to the locality where the captures were processed
-set2.a <- paste0("y ~ -1 + Intercept + ")
-set2.c <- paste0(" +  f(section.num, model = 'iid')") 
-set2.d <- paste0(" +  f(section.num, model = 'iid')") 
-
-# adding a spatial effect
-# mod3 + spatial field
-set3.a <- paste0("y ~ -1 + Intercept + ")
-set3.c <- paste0(" +  f(spatial.field, model = spde)") 
-set3.d <- paste0(" +  f(spatial.field, model = spde)") 
-
-### DONE - no need to include temporal/spatiotemporal effects here, but see Henri's code for more complex models
-```
-
-At this point, we'll just include one model variable (elevation is easy).
+At this point (1.30), we're trying to use the positive CAA values only and 2 environmental variables (elevation and fall 2023 NDVI).
 
 ```{r model_variables}
 ###
 # Model variables
 ###
+# ===== MODEL-SPECIFIC FIXED EFFECT SETS =====
+# These are the fixed effects that will be included in the models and serve as predictor variables
+# Update these if any fixed effects are changed!
+covar_mod1 <- c("log.age",       # Log1p transformed age (years)
+                "Sex",           # Categorical, male/female; will be converted to dummy variables SexFemale/SexMale in the mod matrix
+                "BCS.Average")   # Continuous, body condition score
 
-# Covariates for models - right now just demographics
-covar <- c("age.years",
-           "Sex",
-           "BCS.Average",
-           "elevation")
+covar_mod2 <- c("log.age",
+                "Sex",
+                "BCS.Average",
+                "elevation.std",               # Continuous, scaled elevation (m)
+                "fall.23.NDVI.logit",      # Continuous, logit transformed
+                "LST.day.std")  # Continuous, scaled mean daytime LST (C)
 
-# Need to log(CAA.Estimate) since it tends to have a negbinomial distribution, and we want to work with something more Gaussian for this preliminary analysis
-# Also need to remove those where CAA is <20 (might be 30? if we're going with neg/pos cutoff values?) for this model if we're modeling burden; if wanting to use all values, have to add 1 to all values because can't take log(0) when transforming - this is called "log1p" transformation
-schisto_spatial_df <- schisto_spatial_df %>%
+covar_mod3 <- c("log.age",       # Same as mod2 but re-written for consistency
+                "Sex",
+                "BCS.Average",
+                "elevation.std",       
+                "fall.23.NDVI.logit",
+                "LST.day.std")
+           
+# ===== DATA TRANSFORMATION =====
+# Create log-transformed response variable for modeling
+# Note: CHANGE THIS if working with the full dataset!!
+positive_only_schisto_df <- positive_only_schisto_df %>%
  mutate(log_CAA = log1p(CAA.Estimate))
+  # log1p = log(x + 1) transformation
+  # CAA.Estimate has a right-skewed distribution (negative binomial-like)
+  # log1p transformation normalizes the distribution making it closer to Gaussian
 
-# Response variables - T/C ratio isn't actually biologically relevant at this time, but leaving it in as a placeholder for when I want to run multiple models at once
-resp <- c("log_CAA", "T.C.Ratio")
+# ===== RESPONSE VARIABLES =====
+# List of outcome variables to model
+resp <- c("log_CAA")    # Primary response: log-transformed CAA titer (indicator of schisto burden)
+          #"T.C.Ratio")  # Secondary/placeholder for the time being 
+# Note: Can run multiple models in a loop using this vector
+# Each response gets its own model with same covariates and spatial structure          
 
-# for inla family - specify accordingly - e.g. "binomial", "Gaussian", "poisson"
-resp.family <- c("Gaussian", "Gaussian")
+# ===== MODEL FAMILIES =====
+# Specify probability distribution for each response variable
+resp.family <- c("Gaussian")    # For log_CAA, assumes normally distributed residuals, too
+                 #"Gaussian")    # For secondary/placeholder
+# Other options: "binomial" (presence/absence), "poisson" (counts), 
+#                "negative.binomial" (overdispersed counts)
+# Must match order and length of resp vector
 
+# ===== VARIABLE GROUPINGS FOR PLOTTING =====
+# Organize variables into categories for cleaner visualizations later - helps with plots/tables
 
-# For plotting groups
-environmental.vars <- c(#"fall.2023.NDVI",
-               #"spring.2022.NDVI",
-               "elevation"
-               #"fall.2023.LST.day.mean",
-               #"fall.2023.LST.night.mean",
-               #"land.cover2018",
-              # "mean.surface.water"
-) 
+# Environmental/landscape-level variables
+environmental.vars <- c(
+  "elevation.std",
+  "fall.23.NDVI.logit",               # Vegetation greenness just prior to capture
+  "LST.day.std"                     # Daytime land surface temp
+  #"LST.night.std",                  # Nighttime land surface temp
+  #"land.cover2018",                    # Land cover type
+  # "mean.surface.water",            # Water availability (should use a different layer though)
+  #"spring.22.NDVI.logit"               # Vegetation greenness the spring prior to capture 
+  )
+  
+# Individual-level demographic variables
+demographic.vars <- c(
+  "log.age",
+  "Sex",
+  "BCS.Average")
 
-# Set groupings e.g. "condition vars" or "environmental vars"
-
-demographic.vars <- c("age.years",
-                      "Sex",
-                      "BCS.Average")
-
-# Response variable names - setting what the response variables listed above should be labeled as for ease of interpretation later on
+# ===== RESPONSE VARIABLE LABELS =====
+# Human-readable names for responses (for plots and tables)
 resp.names <- c(
-  "Log Schisto CAA Titer",
-  "Schisto T/C Ratio"
-)#
+  "Log Schisto CAA Titer")
+  #"Schisto T/C Ratio"
 
-resp.names.dt <- data.frame(resp = resp, resp.names = resp.names)
-resp.names.dt$grouping <- NA
+# ===== MODEL SPECIFICATIONS SUMMARY =====
+# Model structure for each response (log_CAA in this case):
+#   log_CAA ~ Intercept + Demographics + Environmental covariates 
+#            + f(section.num) + f(spatial.field) IF specified in the model
+# 
+# Fixed effects: demographics + env covars
+# Random effects: section, for the time being
+# Spatial effect: SPDE with Matérn covariance
 
-# For plotting later on
+# Create lookup table linking the variable names to the display names
+resp.names.dt <- data.frame(
+  resp = resp,              # Variable name in the data
+  resp.names = resp.names   # Display name for plots/tables
+  )
+resp.names.dt$grouping <- NA     # Placeholder for categorizing responses later on
+
+# ===== COLOR PALETTES FOR PLOTTING =====
+# Pre-defined color schemes from RColorBrewer for consistent visualization
+# Each palette is a sequential color scheme (light to dark)
 pallete_list <- c("Blues", "BuGn", "BuPu", "GnBu", "Greens", "Greys", "Oranges",
                   "OrRd", "PuBu", "PuBuGn", "PuRd", "Purples", "RdPu", "Reds", 
                   "YlGn", "YlGnBu", "YlOrBr", "YlOrRd", "Blues", "BuGn", "BuPu", "GnBu",
@@ -603,190 +941,185 @@ pallete_list <- c("Blues", "BuGn", "BuPu", "GnBu", "Greens", "Greys", "Oranges",
                   "OrRd", "PuBu", "PuBuGn",
                   "PuBuGn", "PuRd", "Purples", "RdPu", "GnBu", "Blues")
 
+# Having multiple palettes allows different visualizations for different variables
+# Ensures plots are distinguishable and publication-ready
+
 ### 
 ```
 
-### Setting other INLA values - priors, mesh values, etc.
+### Model Formulas
 
-```{r inla_lists_setup}
-###
-# Setting priors and mesh values
-###
+The general purpose of this chunk is to define some reusable formula building blocks for different model complexities. These strings are combined with covariate names to create complete INLA formulas. The overall structure is as follows: set[model#].[suffix] where the suffix indicates formula variant for that level of model (gaussian vs non-gaussian). The only big difference between the gaussian and non-gaussian models is how the priors and hyperparameters/hyperpriors are coded, which for now (1.30) is the same, because we have no random effects at this point in time.
 
-# Including the KNP boundary so that the mesh is 'buffered' around the edges of the park 
+The complete formula is built as: 
 
-# !!! Use meshbuilder() to get an idea of how these affect the mesh, If you look at the code tab there, you could copy that and replace it with our boundary and location data 
+set#.left (formula header) + fixed_# (fixed effects for that model set) +/- random effect, either .a for gaussian or .b for non-gaussian models
+Example: "set1.left " + "fixed_1"
+Results in: y ~ -1 + Intercept + age + sex + BCS
 
-# Set global vars
-LOCUTMset = TRUE # because coordinates are already in UTM
-toUTMset = FALSE
-spdePriorFlat_set = FALSE #use spde priors - spdePriorFlat
+The "-1 + Intercept" removes R's automatic intercept, and "+ Intercept" adds it back explicitly as a named variable in the stack. This gives us control over intercept priors and ensures correct INLA stack structure. 
 
-# spde prior controls the spatial correlation decay - the distance at which correlation drops to ~ 0.1
-# Range prior: You expect spatial correlation to decay within ~10km
-spdepriorrange_set = c(10000, 0.5) # spde prior P(range < 3000) = 0.01
+At present (1.30), these model sets are provided in increasing order of complexity from 1 - 3: set 1 includes demographics ONLY, set 2 includes demographics, environmental variables, and a random effect of management section, and set 3 includes the effects from sets 1 & 2, with a spatial component. These should be updated if any changes to effects occur, as well.
 
-# controls field variability - how much the spatial field varies around the mean
-# on the scale of the response variable
-# Sigma prior: 
-spdepriorsigma_set = c(10, 0.1) #spde prior P(sigma > 5) = 0.1
+```{r inla-model-formulas}
+####
+# Sets of formulas1-3, each with a and b
+####
 
-# Set mesh edge values
-# Controls triangle size (inner, outer)
-Max_edge_set <- if(isTRUE(LOCUTMset)){
-  #this is inner edge length 5km and outer edge length 20km in UTM
-  c(5000, 20000)
-} else {
-  c(0.045, 0.09) #latlong 0.03
-}
+# ===== DEFINE UNIVERSAL MODEL COMPONENT =====
+# This is the "left" side - the response and intercept specification which will be in every model 
+form.left<- paste0("y ~ -1 + Intercept + ")
 
-# Minimum spacing between points
-Cutoff_set <- if(isTRUE(LOCUTMset)){
-  c(2000) #UTM  2000 aka 2000 meters or 2km
-} else {
-  c(0.0045) #latlong 0.003
-}
+# ===== MODEL SET 1: DEMOGRAPHICS (no random effect, no spatial effect) =====
+# Simple fixed effects model
+# Option to include a random effect, ex: f(animal.numid, model='iid') = independent random intercepts per animal
+# See `_hjc` code for example of how to include a random effect and what types of different priors you need for a gaussian vs non-gaussian model
+# These would be named  set1.a and set1.b for the two different random effect "endings" to the model
+# At this point, there is no need to define other parts of this model so there is no `set1.a/set1.b` here
 
-# Buffer inside/outside boundary
-Offset_set <- if(isTRUE(LOCUTMset)){
-  #this is 3km inside and 5km outside the boundary, in UTM
-  c(3000, 5000)
-} else {
-  c(0.045, 0.009)
-}
-  
-# Set boundary to latlong or UTM
-BdrY <- bdry.utm
+# COMPLETE MODEL 1 FORMULA (Gaussian):
+# form.left: y ~ -1 + Intercept +
+# colnames from Xsub.filter: SexFemale + SexMale + age.years + BCS.Average
 
-```
+# ===== MODEL SET 2: ENVIRONMENTAL VARIABLES (no spatial) =====
+# Currently adds environmental variables park management section as a random effect
+# Tests whether disease varies by geographic management unit
+# Assumes sections are exchangeable (no spatial structure between them)
+# Uses the same form.left as model 1
 
-### Subsetting the data
+# Adds in a random intercept for each park section
+set2.a <- paste0(" +  f(section.num, model = 'iid')") 
+# section.num gives a numeric ID for each section (Malelane, Crocodile Bridge, etc.)
+# Assumes some degree of variance between sections, but no spatial correlation
+# Interpretation of this effect would be "Some sections have generally higher/lower disease, independent of location"
+# Can also include another random effect that may differ between gaussian/non-gaussian models - see `_hjc` code for example
 
-At this point, we are going to try to run the models using only one buffalo per capture location, to see if there truly is an issue with spatial variability and multiple buffalo sharing a single capture location.
+# Non-Gaussian version of set a is the same
+set2.b <- paste0(" +  f(section.num, model = 'iid')") 
 
-First we must extract one buffalo per sample location.
+# COMPLETE MODEL 2 FORMULA (Gaussian):
+# form.left: y ~ -1 + Intercept + 
+# colnames of Xsub.filter: SexFemale + SexMale + age.years + BCS.Average + elevation + ENV VARS + 
+# set2.a:   f(section.num, model='iid')
 
-```{r extracting_data}
-# Creating a unique location identifier and extracting one per unique location
+# ===== MODEL SET 3: SPATIAL EFFECTS =====
+# Adds continuous spatial random field using SPDE
+# Captures smooth spatial variation across the landscape
+# Most complex  set of models
+# Same left side of the model as the other 2
 
-schisto_subset_data <- schisto_spatial_df %>%
-  mutate(location_id = paste(x.east, y.south, sep = "_")) %>%
-  group_by(location_id) %>%
-  # Randomly select one buffalo per location
-  slice_sample(n = 1) %>%
-  # Remove grouping
-  ungroup()
+# Spatial random field using SPDE approximation
+set3.a <- paste0(" +  f(spatial.field, model = spde)") 
+# spatial.field is an object containing indices linking observations to mesh nodes (from inla.spde.make.index)
+# model = spde tells the model to use the SPDE object created by my_spde_function
+# This contains the Matérn covariance structure, as well as the range and variance controlled by PC priors
+# Hopefully, this captures smooth spatial patterns not explained by covariates
+# Examples: habitat quality gradients, water availability, unmeasured environmental factors
+# Again, see `_hjc` code for examples of keeping OTHER random effects with gaussian vs non-gaussian priors
 
-```
+# The non-gaussian version (again, only looks different with other random effects and their priors)
+set3.b <- paste0(" +  f(spatial.field, model = spde)") 
 
-This gives a total of 102 observations to work with.
+# COMPLETE MODEL 3 FORMULA (Gaussian):
+# form.left: y ~ -1 + Intercept + SexFemale + SexMale + age.years + BCS.Average + elevation + ENV VARS +
+# set3.a:   f(spatial.field, model=spde)
 
-### Mesh Example
-
-This is an example from Henri of how the 'my_mesh_function' constructs the mesh, and how he saves it to the wd. Notice that as the triangles approach the KNP boundary, they get smaller. There aren't any capture locations input just yet, so that is why there aren't any triangles inside of the boundary.
-
-```{r example_mesh}
-#Mesh list
-mod.mesh.list <-
-#lapply(1:length(resp), function(x){ - uncomment this line to loop through all response variables listed in `resp` (in this case, two)
-lapply(1:1, function(x){
-my_mesh_function(DT = schisto_subset_data,
-                 Covar = covar,
-                 Resp = resp[[x]],
-                 LOCUTM = LOCUTMset,
-                 toUTM = toUTMset,
-                 BNDRY = BdrY,
-                 Max_edge = Max_edge_set,
-                 Cutoff = Cutoff_set,
-                 Offset = Offset_set,
-                 DTsubset = TRUE)
-})
-
-
-plot(mod.mesh.list[[1]])
-#meshdt <- mod.mesh.list #[[1]]
-#mod.mesh.list[[1]]$n
-
-#save(mod.mesh.list, file = file.path(file_path, "inla.model","mod_mesh_list.R"))
-#load(file = file.path(file_path, "inla.model","mod_mesh_list.R"))
-rm(mod.mesh.list)
-gc()
-
-### END ###
+### DONE - no need to include temporal/spatiotemporal effects here, but see Henri's code for more complex models
 ```
 
 ## Running the limited model(s)
 
-### Model 1: Base Model
+### Model 1: Demographic Model
 
-This model only includes a mixed effect for animal ID. In Henri's code, this model (and all other models) are scripts that can be ran in the background. Here we won't do that just yet.
+This is a fixed-effects model to understand the effects of host demographics on Schisto burden, given by:
+
+y ~ -1 + Intercept + SexFemale + SexMale + age.years + BCS.Average, where y = log1p(CAA)
 
 ```{r model-1, cache=TRUE, warning=FALSE}
-# Initialize lists
-mod1.list <- list()
-mod1.stack.list <- list()
-mod1.mesh.list <- list()
-mod1.spde.list <- list()
+# ===== INITIALIZE STORAGE LISTS =====
+# Store results from each response variable separately
+mod1.list <- list()         # Full INLA model objects
+mod1.stack.list <- list()   # Data stacks
+mod1.mesh.list <- list()    # Meshes (created but not used in Model 1)
+mod1.spde.list <- list()    # SPDE objects (created but not used in Model 1)
 
-# This line loops through each response variable and will run the model once for each
+# ===== MODEL LOOP =====
+# Run one model for each response variable
 for(x in 1:length(resp)){
   
-  # Progress indicator (will show in console, not in knitted doc) - tells you which model is running
+  # ----- Progress indicator ----- (will show in console, not in knitted doc) - tells you which model is running
   cat("Processing model 1:", resp[x], "-", x, "of", length(resp), "\n")
   
-  # Subset data - removes rows with missing values for the current response variable and covariates to create a clean dataset for that model
-  dt.sub <- my_dt_subset_function(DT = schisto_subset_data, 
-                                   Covar = covar, 
+  # ----- Step 1: Prepare Data -----
+  # Remove rows with missing values in response or covariates
+  # Ensures complete cases for each specific response variable
+  dt.sub <- my_dt_subset_function(DT = positive_only_schisto_df, 
+                                   Covar = covar_mod1, # Filtering based on demographic covariates only
                                    Resp = resp[x])
   dt.sub <- as.data.frame(dt.sub)
   
   cat("✓ Data subset complete, n =", nrow(dt.sub), "\n")
   
-  # Create mesh
+  # ----- Step 2: Create Mesh -----
+  # Note: Mesh is created but NOT used in Model 1 (no spatial component)
+  # Kept here for consistency with Model 3 code structure
   mesh <- my_mesh_function(DT = dt.sub,
-                           Covar = covar,
+                           Covar = covar_mod1,
                            Resp = resp[x],
                            LOCUTM = LOCUTMset,
-                           BNDRY = BdrY,
+                           BNDRY = kruger_shape,
                            Max_edge = Max_edge_set,
                            Cutoff = Cutoff_set,
                            Offset = Offset_set,
-                           DTsubset = FALSE)
+                           DTsubset = FALSE) # Data already subset above
   mod1.mesh.list[[resp[x]]] <- mesh
   cat("✓ Mesh construction complete\n")
   
-  # Make the model matrix
-  Xsub <- my_modelmatrix_function(DT = dt.sub, Covar = covar, CatVarSub = CatVarSub)
+  # ----- Step 3: Create Model Matrix -----
+  # Converts categorical variables (like Sex) into dummy variables
+  # Result: numeric matrix where each column is a predictor
+  Xsub <- my_modelmatrix_function(DT = dt.sub, 
+                                  Covar = covar_mod1,
+                                  CatVarSub = CatVarSub)
   cat("✓ Model matrix created, dim =", nrow(Xsub), "x", ncol(Xsub), "\n")
   
-  # Create  the stack
+  # ----- Step 4: Create INLA Stack -----
+  # Packages data in INLA's required format
+  # include_spatial = FALSE means no spatial random effects in Model 1
   stack <- my_stack_function(Resp = resp[x],
-                             Covar = covar,
+                             Covar = covar_mod1,
                              DT = dt.sub, 
                              Mod.Matrix = Xsub,
                              GroupVar = NULL,
-                             include_section = FALSE,
-                             include_spatial = FALSE,
-                             spdePriorFlat = spdePriorFlat_set,
+                             include_section = FALSE,   # No section random effect
+                             include_spatial = FALSE,   # No spatial component unless model set 3
+                             spdePriorFlat = spdePriorFlat_set,  # we set this to FALSE earlier to use our PC priors
                              spdepriorrange = spdepriorrange_set,
                              spdepriorsigma = spdepriorsigma_set,
                              LOCUTM = NULL,
-                             BNDRY = BdrY, 
+                             BNDRY = kruger_shape, 
                              Max_edge = Max_edge_set,
-                             Mesh.list = mesh)
-  
-  cat("✓ Stack created\n")
+                             Mesh.list = mesh) 
   
   mod1.stack.list[[resp[x]]] <- stack
+  cat("✓ Stack created\n")
   
-  # Set priors
+  # ----- Step 5: Set Priors for Residual Precision -----
+  # PC prior for residual variance (how much unexplained variability remains)
   sdres <- sd(dt.sub[,resp[x]], na.rm = T)
-  pcprior <- list(prec = list(prior="pc.prec", param = c(3*sdres,0.01))) # this is a penalized complexity prior - helps to prevent overfitting; says we think the SD is around 3 times the observed SD, with 1% probability
+  pcprior <- list(prec = list(prior="pc.prec", param = c(3*sdres,0.01))) 
+  # this is a penalized complexity prior - helps to prevent overfitting
+  # says we think the residual SD is very close to the observed SD, with only a 1% chance of being greater than 3x the observed SD
+  
   cat("✓ Priors set\n")
   
-  Xsub.filter <- Xsub # this line is a placeholder for filtering variables, but as is just keeps all variables
+  # ----- (Optional) Step 6: Filter Covariates (if needed) -----
+  # We should only be using demographic covariates anyway, so is a placeholder for now
+  Xsub.filter <- Xsub
   
-  # Create SPDE
+  # ----- Step 7: Create SPDE -----
+  # Note: SPDE is created but NOT used in Model 1 (no spatial component)
+  # Kept for code consistency with Model 3
   SPDE <- my_spde_function(Mesh = mesh,
                            spdePriorFlat = spdePriorFlat_set,
                            spdepriorrange = spdepriorrange_set,
@@ -794,157 +1127,266 @@ for(x in 1:length(resp)){
   mod1.spde.list[[resp[x]]] <- SPDE
   cat("✓ SPDE created\n")
   
-  # Build formula
+  # ----- Step 8: Build Model Formula -----
+  # Create formula string based on family and covariates
   if(resp.family[x] == "gaussian"){
-    modform <- as.formula(paste0(set1.a, paste0(colnames(Xsub.filter), collapse = " + "), set1.c))   
-  } else {
-    modform <- as.formula(paste0(set1.a, paste0(colnames(Xsub.filter), collapse = " + "), set1.d)) 
+    modform <- as.formula(paste0(form.left, paste0(colnames(Xsub.filter), collapse = " + "))
+)}
+  # Results in something like:
+    # y ~ -1 + Intercept + SexFemale + SexMale + age.years + BCS.Average
+    # see `_hjc` code for an example with a gaussian random effect
+  else {
+    modform <- as.formula(paste0(form.left, paste0(colnames(Xsub.filter), collapse = " + "))
+)  # what to use if non-gaussian family - right now is the same
   }
+  
   cat("✓ Formula:", as.character(modform)[2], "\n")
   
-  # Run INLA model with error handling
+  # ----- Pre-INLA Debug Code -----
+  # Checking dimensions of response and covariates match
+  cat("\n=== PRE-INLA DEBUG ===\n")
+  cat("Formula:\n")
+  print(modform)
+  cat("\nStack data structure:\n")
+  stack_data <- inla.stack.data(stack)
+  print(names(stack_data))
+  cat("y length:", length(stack_data$y), "\n")
+  cat("y has NAs:", sum(is.na(stack_data$y)), "\n")
+
+  # Check each component in stack data
+  for(name in names(stack_data)) {
+    if(name != "spde") {
+      cat(name, "- length/dim:", 
+         if(is.matrix(stack_data[[name]])) dim(stack_data[[name]]) else length(stack_data[[name]]), 
+        "\n")
+   }
+  }
+  cat("=====================\n\n")
+  
+  # ----- Step 9: Fit INLA Model -----
+  # Run the actual Bayesian inference
   error_next = FALSE
-  set.seed(20084)
+  set.seed(20084) # For reproducibility
   
   tryCatch(
     mod.run <- inla(modform,
-                    family = resp.family[x],
-                    data = inla.stack.data(stack, spde = SPDE),
-                    control.compute = list(dic = TRUE, waic = TRUE),
-                    control.predictor = list(A = inla.stack.A(stack))),
+                    family = resp.family[x],                             # Gaussian for log_CAA
+                    data = inla.stack.data(stack),                       # Data from stack, NO SPDE
+                    control.compute = list(dic = TRUE, waic = TRUE),     # Compute model fit metrics
+                    control.predictor = list(A = inla.stack.A(stack))),  # Projection matrix
     error = function(e) {
       error_next <<- TRUE
       cat("ERROR on:", resp[x], "\n")
       cat("Error message:", e$message, "\n")
     })
   
+  # Skip to next response if this one failed
   if(error_next) {next}
   
   cat("✓ INLA model complete\n")
   
+  # ----- Step 10: Store Results -----
   mod1.list[[resp[x]]] <- mod.run
 }
+## ===== END MODEL 1 LOOP =====
 
-## END MODEL 1
-## %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-# Extract DIC
+# ===== EXTRACT MODEL FIT STATISTICS =====
+
+# ----- Extract DIC (Deviance Information Criterion) -----
+# DIC: model fit metric (lower = better fit)
+# Penalizes model complexity (similar to AIC)
 mod1.dic.list <- list()
 for(i in 1:length(resp)){
   mod1.dic.list[[i]] <- mod1.list[[i]]$dic$dic
 }
 
+# Handle cases where DIC wasn't computed properly
+# Recalculate from local DIC values if needed
 if(length(which(is.na(mod1.dic.list))) > 0){
   for(xna in 1:length(which(is.na(mod1.dic.list)))){
     sub <- (which(is.na(mod1.dic.list)))[1]
-    mod1.dic.list[[sub]] <- sum(mod1.list[[sub]]$dic$local.dic, na.rm = T)
-    print(paste0("Fixed DIC for var: ", resp[sub]))
+    mod1.dic.list[[sub]] <- sum(mod1.list[[sub]]$dic$local.dic, na.rm = TRUE)
+    cat("Fixed DIC for var:", resp[sub], "\n")
   }
 }
 
+# Convert list to matrix for easy viewing
 mod1.dic.list <- do.call(rbind, mod1.dic.list)
+
+# Optional: save DIC values
 #write.csv(mod1.dic.list, file.path(file_path, "inla.model","dic","mod1_dic.csv"))
 
-# extract summary
+# ----- Extract Model Summaries -----
+# Pull out coefficients, credible intervals, etc. from each model
+# myInla_extract() is a custom function (defined elsewhere) that formats INLA output - is currently edited to remove info from animal.ID
 mod1.list.extract <-
   lapply(1:length(resp), function(x){
     myInla_extract(mod1.list[[x]], ModelName = resp[x])
   })
 
+# Display summaries
 print(mod1.list.extract)
+
+# Save extracted summaries for later use
 save(mod1.list.extract, file = file.path(file_path, "inla.model","mod1.list.extract.R"))
-#load(file = file.path(file_path, "inla.model","mod1.list.extract.R"))
+# To reload later: load(file = file.path(file_path, "inla.model","mod1.list.extract.R"))
 
-# We might include a caterpillar plot here?
 
-# Model selection?
-#HostModelSel <- INLAModelSel(resp[1], covar, "animal.ID", "iid", "Gaussian", Xsub.filter))
+# ----- Model Selection -----
+# Compare different covariate combinations (if desired)
+# Example using custom function:
+# HostModelSel <- INLAModelSel(resp[1], covar, "animal.ID", "iid", "Gaussian", Xsub.filter)
+
+## ===== END MODEL 1 POST-PROCESSING =====r))
 ```
 
-Both models ran (even though T/C Ratio isn't all that important) - the burden model subset out to only 65 individuals.
+Now we'll plot some of the model ouputs. These could be included in the model loop code (and might be later), but for now, these are a separate code chunk.
 
-### Model 2: Add herd or location to the base model
+```{r model-1-plotting}
+### MODEL OUTPUT FIGURES
 
-This model includes a grouping factor into the model to account for repeated measures withing a grouping, but we don't really have that issue here. See the commented out "CatVarSub..." line in the model stack.
+# Extract fixed effects from the model
+fixed_effects_mod1 <- mod1.list$log_CAA$summary.fixed
+
+# Add variable names as a column
+fixed_effects_mod1$variable <- rownames(fixed_effects_mod1)
+
+# Remove intercept if you want to focus on covariates only (optional)
+#fixed_effects <- fixed_effects %>%
+  #filter(variable != "Intercept")
+
+# Create pretty labels for variables
+variable_labels <- data.frame(
+  variable = c("Intercept", "log.age", "SexFemale", "SexMale", "BCS.Average"),
+  label = c("Intercept", "Log Age (years)", "Sex: Female", "Sex: Male", "Body Condition Score")
+  )
+
+# Join labels to fixed effects
+fixed_effects_mod1 <- fixed_effects_mod1 %>%
+  left_join(variable_labels, by = "variable") %>%
+  mutate(display_label = ifelse(is.na(label), variable, label))
+
+# Create caterpillar plot
+caterpillar_plot_mod1 <- ggplot(fixed_effects_mod1, aes(x = mean, y = reorder(display_label, mean))) +
+  # Point estimate
+  geom_point(size = 3) +
+  # 95% Credible interval
+  geom_errorbarh(aes(xmin = `0.025quant`, xmax = `0.975quant`), height = 0.2) +
+  # Reference line at zero
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  # Labels
+  labs(
+    title = "Host Demographic Effects on Schisto Titer",
+    x = "Effect Size (95% Credible Interval)",
+    y = "Demographic Covariates"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.y = element_text(size = 11),
+    axis.text.x = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold")
+  )
+
+print(caterpillar_plot_mod1)
+
+# Save the plot
+ggsave(file.path(file_path, "figures", 
+                 paste0("caterpillar_mod1_", "demographics_only", ".png")),
+       caterpillar_plot_mod1, width = 8, height = 6, dpi = 300)
+
+```
+
+### Model 2: Demographics + Environment
+
+This model is a mixed-effects model, including host demographics and environmental variables as fixed effects, and management section as a random effect. The model equation is given by:
+
+y ~ -1 + Intercept + SexFemale + SexMale + age.years + BCS.Average + elevation + fall.2023.NDVI + f(section.num, model='iid')
 
 ```{r model-2, cache=TRUE, warning=FALSE}
-####
-#Model set 2
-####
+# ===== INITIALIZE STORAGE LISTS =====
+mod2.list <- list()        # Full INLA model objects
+mod2.stack.list <- list()  # Data stacks
+mod2.mesh.list <- list()   # Meshes (created but not used without spatial)
+mod2.spde.list <- list()   # SPDE objects (created but not used without spatial)
 
-mod2.list <- list()
-mod2.stack.list <- list()
-mod2.mesh.list <- list()
-mod2.spde.list <- list()
-
+# ===== MODEL LOOP =====
 for(x in 1:length(resp)){
   
-  # Progress indicator (will show in console, not in knitted doc) - tells you which model is running
+  # ----- Progress Tracking -----
   cat("Processing model 2:", resp[x], "-", x, "of", length(resp), "\n")
   
-  # Subset data - removes rows with missing values for the current response variable and covariates to create a clean dataset for that model
-  dt.sub <- my_dt_subset_function(DT = schisto_subset_data, 
-                                   Covar = covar, 
+  # ----- Step 1: Prepare Data -----
+  dt.sub <- my_dt_subset_function(DT = positive_only_schisto_df, # currently running with only schisto positive animals
+                                   Covar = covar_mod2, # host demographics and environmental covariates
                                    Resp = resp[x])
   dt.sub <- as.data.frame(dt.sub)
   
   cat("✓ Data subset complete, n =", nrow(dt.sub), "\n")
   
-  #scale response if values range widely (e.g., 0-100+) - this particular "scale = T" is a z-score transformation so that the mean of the data becomes 0 and the SD becomes 1
-  #dt.sub[,resp[x]] <- scale(dt.sub[,resp[x]], scale = T)
+  # ----- Optional: Scale Response Variable -----
+  # Commented out - only needed if response has very wide range
+  # Z-score transformation: centers at 0, scales to SD = 1
+  # Helps with numerical stability but makes interpretation harder
+  # dt.sub[,resp[x]] <- scale(dt.sub[,resp[x]], scale = TRUE)
   
-  #mesh
+  # ----- Step 2: Create Mesh -----
+  # Note: Mesh created for code consistency but not used (no spatial component)
   mesh <- my_mesh_function(DT = dt.sub,
-                           Covar = covar,
+                           Covar = covar_mod2,
                            Resp = resp[x],
                            LOCUTM = LOCUTMset,
-                           BNDRY = BdrY,
+                           BNDRY = kruger_shape,
                            Max_edge = Max_edge_set,
                            Cutoff = Cutoff_set,
-                           DTsubset = FALSE)
+                           DTsubset = FALSE)          # Already subset above
   mod2.mesh.list[[resp[x]]] <- mesh
   cat("✓ Mesh construction complete\n")
   
-  # make model.matrix
-  Xsub <- my_modelmatrix_function(DT = dt.sub, Covar = covar)#, CatVarSub = CatVarSub) - we don't have any of these for now
+  # ----- Step 3: Create Model Matrix -----
+  Xsub <- my_modelmatrix_function(DT = dt.sub, Covar = covar_mod2) #, CatVarSub = CatVarSub) if including any grouping factor
+  # Note: CatVarSub parameter not needed for current covariates - may consider capture group
   
-  # make the stack
+  # ----- Step 4: Create INLA Stack -----
+  # KEY DIFFERENCE FROM MODEL 1: include_section = TRUE
+  # This adds park section as a random effect
   stack <- my_stack_function(Resp = resp[x],
-                             Covar = covar,
+                             Covar = covar_mod2,
                              DT = dt.sub, 
                              Mod.Matrix = Xsub,
                              GroupVar = NULL,
-                             include_section = TRUE,
-                             include_spatial = FALSE,
+                             include_section = TRUE,                # Adding section as a random effect
+                             include_spatial = FALSE,               # Still no spatial component
                              spdePriorFlat = spdePriorFlat_set,
                              spdepriorrange = spdepriorrange_set,
                              spdepriorsigma = spdepriorsigma_set,
                              LOCUTM = LOCUTMset,
-                             BNDRY = BdrY, 
-                             #CatVarSub =  include the repeated sampling group here if needed
+                             BNDRY = kruger_shape, 
+                             #CatVarSub =  include the repeated sampling group here if needed - might include capture group here
                              Max_edge = Max_edge_set,
                              Mesh.list = mesh)
  
    cat("✓ Stack created\n")
+   mod2.stack.list[[resp[x]]] <- stack
   
-  mod2.stack.list[[resp[x]]] <- stack
-  
-  #priors
+  # ----- Step 5: Set Priors -----
   sdres <- sd(dt.sub[,resp[x]], na.rm = T)
   pcprior <- list(prec = list(prior="pc.prec", param = c(3*sdres,0.01)))
-  
   cat("✓ Priors set\n")
   
-  # drop some variables if necessary to further subset the data
+   # ----- Step 6: Filter Covariates (Optional) -----
+  # Placeholder for removing specific variables if needed
+  # Example: might want to drop "section" as a fixed effect if it was previously included in the model since it's now random
+  # Currently keeps all variables
   #if(resp[x] == "condition"){
   #  Xsub %>% dplyr::select((!contains(c("herd","condition")))) -> Xsub.filter
   #} else {
   #  Xsub %>% dplyr::select(!contains(c("herd"))) -> Xsub.filter
   #}
-  
   Xsub.filter <- Xsub
   
-  # SPDE
+  # ----- Step 7: Create SPDE -----
+  # Created for consistency but not used without spatial component
   SPDE <- my_spde_function(Mesh = mesh,
                            spdePriorFlat = spdePriorFlat_set,
                            spdepriorrange = spdepriorrange_set,
@@ -952,60 +1394,97 @@ for(x in 1:length(resp)){
   mod2.spde.list[[resp[x]]] <- SPDE
   cat("✓ SPDE created\n")
   
-  # Set model forumulas
+  # ----- Step 8: Build Model Formula -----
+  # Formula now includes f(section.num, model='iid')
+  # form.left, set2.a, set2.b defined in the model formula code chunk
   if(resp.family[x] == "gaussian"){
-    modform <- as.formula(paste0(set2.a, paste0(colnames(Xsub.filter), collapse = " + "), set2.c))    
-  } else {
-    modform <- as.formula(paste0(set2.a, paste0(colnames(Xsub.filter), collapse = " + "), set2.d))  
+    modform <- as.formula(paste0(form.left, paste0(colnames(Xsub.filter), collapse = " + "), set2.a))    
+  } 
+  # Results in something like:
+  # y ~ -1 + Intercept + SexFemale + SexMale + age.years + BCS.Average + elevation +
+  #     f(section.num, model='iid') - Section random effect
+  else {
+  modform <- as.formula(paste0(form.left, paste0(colnames(Xsub.filter), collapse = " + "), set2.b))  
   }
   cat("✓ Formula:", as.character(modform)[2], "\n")
   
-  # run the inla model and catch any errors
+  # ===== PRE-INLA DEBUG CODE =====
+  cat("\n=== PRE-INLA DEBUG ===\n")
+  cat("Formula:\n")
+  print(modform)
+  
+  stack_data <- inla.stack.data(stack)
+  cat("\nStack data structure:\n")
+  cat("Names in stack data:", paste(names(stack_data), collapse=", "), "\n")
+  
+  cat("\nChecking each variable in formula:\n")
+  cat("'y' in stack_data:", "y" %in% names(stack_data), "\n")
+  cat("'Intercept' in stack_data:", "Intercept" %in% names(stack_data), "\n")
+  cat("'section.num' in stack_data:", "section.num" %in% names(stack_data), "\n")
+  
+  for(covar in colnames(Xsub.filter)) {
+    cat("'", covar, "' in stack_data: ", covar %in% names(stack_data), "\n", sep="")
+  }
+  cat("=====================\n\n")
+  
+  # ----- Step 9: Fit INLA Model -----
   error_next = FALSE #For tryCatch
   set.seed(20084)
   
-  tryCatch(
+  tryCatch({
     mod.run <-
       inla(modform,
            family = resp.family[x],
-           data = inla.stack.data(stack, spde = SPDE),
+           data = inla.stack.data(stack),
            control.compute = list(dic = TRUE, waic = TRUE),
            control.predictor = list(A = inla.stack.A(stack)))
-    # if error
-    , error = function(e) {skip_to_next <<- TRUE; print(paste0("error on:", resp[x]))})
+   }
+  , error = function(e) {
+    error_next <<- TRUE
+    cat("========= ERROR =========\n")
+    cat("Error on:", resp[x], "\n")
+    cat("Error message:", e$message, "\n")
+    cat("========================\n")
+  })
+  
   if(error_next) {next}
   
   cat("✓ INLA model 2 complete\n")
   
+  # ----- Step 10: Store Results -----
   mod2.list[[resp[x]]] <- mod.run
-} ### END mod2.list ###
+} 
+### END Model 2 LOOP ###
 
-### %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# ===== POST-PROCESSING =====
 
 print("Completed model loop, now saving objects")
 
-# save lists
+# ----- Optional: Save Large Objects -----
+# Uncomment to save for later reloading
 #save(mod2.list, file = file.path(file_path, "inla.model", "mod2_list.R"))
-#load(file = file.path(file_path, "inla.model","mod2_list.R"))
+
+# Uncomment to  load later on: load(file = file.path(file_path, "inla.model","mod2_list.R"))
 #save(mod2.stack.list, file = file.path(file_path, "inla.model", "mod2_stack_list.R"))
-#load(file = file.path(file_path, "inla.model","mod2_stack_list.R"))
 #save(mod2.mesh.list , file = file.path(file_path, "inla.model", "mod2_mesh_list.R"))
-#load(file = file.path(file_path, "inla.model","mod2_spde_list.R"))
 #save(mod2.spde.list , file = file.path(file_path, "inla.model", "mod2_spde_list.R"))
-#load(file = file.path(file_path, "inla.model", "mod2._spde_list.R"))
 
-rm(mod2.stack.list, mod2.mesh.list, mod2.spde.list)
-gc()
+# ----- Clean Up Memory -----
+# Remove large objects no longer needed (keep mod2.list for analysis)
+#rm(mod2.stack.list, mod2.mesh.list, mod2.spde.list)
+#gc()
 
-print("Completed saving objects now extracting model results...")
+cat("Completed saving objects now extracting model results...\n")
 
+# ===== EXTRACT MODEL FIT STATISTICS =====
 
-# Extract DIC
+# ----- Extract DIC -----
 mod2.dic.list <- list()
 for(i in 1:length(resp)){
   mod2.dic.list[[i]] <- mod2.list[[i]]$dic$dic
 }
 
+# Handle missing DIC values
 if(length(which(is.na(mod2.dic.list))) > 0){
   for(xna in 1:length(which(is.na(mod2.dic.list)))){
     sub <- (which(is.na(mod2.dic.list)))[1]
@@ -1015,193 +1494,333 @@ if(length(which(is.na(mod2.dic.list))) > 0){
 }
 
 mod2.dic.list <- do.call(rbind, mod2.dic.list)
+# Optional: Save DIC
 #write.csv(mod2.dic.list, file.path(file_path, "inla.model", "dic", "mod2_dic.csv"))
 
-# extract summary
+# ----- Extract Model Summaries -----
 mod2.list.extract <-
   lapply(1:length(resp), function(x){
     myInla_extract(mod2.list[[x]], ModelName = resp[x])
   })
 
-# Creating a publication-ready regression table that will be displayed in the console of whatever model objects we've extracted
+# ----- Display Regression Table -----
+# Creates publication-ready table in console
+# Shows coefficients, standard errors, credible intervals
 texreg::screenreg(mod2.list.extract)
 
-save(mod2.list.extract, file = file.path(file_path, "inla.model","mod2.list.extract.R"))
-#load(file = file.path(file_path, "inla.model","mod2.list.extract.R"))
+# Save extracted summaries
+#save(mod2.list.extract, file = file.path(file_path, "inla.model","mod2.list.extract.R"))
+# To reload: load(file = file.path(file_path, "inla.model","mod2.list.extract.R"))
 
+# ===== VISUALIZATION: =====
 # See the model 2 code for Henri's code making nice tables for his dissertation!
 
-# Caterpillar plot
+# ----- Caterpillar Plot for Section Random Effects -----
+# Shows estimated effect for each park section with uncertainty
+# Helps identify which sections have higher/lower disease burden
+
+# Extract section random effects from the last model run
 section_effects <- mod.run$summary.random$section.num
 
-ggplot(section_effects, aes(x = mean, y = reorder(ID, mean))) +
-  geom_point() +
-  geom_errorbarh(aes(xmin = `0.025quant`, xmax = `0.975quant`)) +
-  geom_vline(xintercept = 0, linetype = "dashed") +
-  labs(x = "Section Effect", y = "Section")
+# Create the caterpillar plot 
+section_effect_plot <- ggplot(section_effects, aes(x = mean, y = reorder(ID, mean))) +
+  geom_point(size = 3) +  # Point estimate
+  geom_errorbarh(aes(xmin = `0.025quant`, xmax = `0.975quant`), 
+                 height = 0.2) +  # 95% credible intervals
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +  # Reference line
+  labs(
+    x = "Section Effect (log scale)",
+    y = "KNP Management Section",
+    title = "Random Effects by Park Section",
+    subtitle = "95% Credible Intervals"
+  ) +
+  theme_minimal()
+section_effect_plot
 
-# Shows no real difference between section effect
+# INTERPRETATION:
+# - Points to the right of 0 = higher disease in that section
+# - Points to the left of 0 = lower disease in that section  
+# - Wide intervals = high uncertainty (few observations in that section)
+# - Narrow intervals = more confident estimate
+# - If all intervals overlap 0 = no strong section differences
+# Note: Plot shows minimal differences between sections for this dataset
+
+# ----- Caterpillar Plot for  Fixed Effects -----
+# Extract fixed effects from the model
+fixed_effects_mod2 <- mod2.list$log_CAA$summary.fixed
+fixed_effects_mod2$variable <- rownames(fixed_effects_mod2)
+
+variable_labels_mod2 <- data.frame(
+  variable = c("Intercept", "log.age", "SexFemale", "SexMale", "BCS.Average", "elevation", "fall.2023.NDVI", "fall.2023.LST.day.mean"),
+  label = c("Intercept", "Age [log(years)]", "Sex: Female", "Sex: Male", "Body Condition Score", "Elevation (m; standartized)", "Fall '23 NDVI (logit)", "Fall '23 Mean LST - Day (C; standardized)")
+  )
+
+# Join labels to fixed effects
+fixed_effects_mod2 <- fixed_effects_mod2 %>%
+  left_join(variable_labels_mod2, by = "variable") %>%
+  mutate(display_label = ifelse(is.na(label), variable, label))
+
+# Create caterpillar plot
+caterpillar_plot_mod2 <- ggplot(fixed_effects_mod2, aes(x = mean, y = reorder(display_label, mean))) +
+  geom_point(size = 3) +
+  geom_errorbarh(aes(xmin = `0.025quant`, xmax = `0.975quant`), height = 0.2) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    title = "Demographic and Environmental Effects on Schisto Burden",
+    x = "Effect Size (95% Credible Interval)",
+    y = "Covariates"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.y = element_text(size = 11),
+    axis.text.x = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold")
+  )
+
+print(caterpillar_plot_mod2)
+
+# Save the plot
+#ggsave(file.path(file_path, "figures", 
+                 #paste0("caterpillar_mod2_", "demographics_and_env", ".png")),
+       #caterpillar_plot_mod2, width = 8, height = 6, dpi = 300)
+
+
+# ===== MODEL COMPARISON NOTES =====
+# Compare DIC values:
+#   - Model 1 DIC: baseline - host demographics only, no random effects
+#   - Model 2 DIC: adding in environmental covariates and park section (random effect)
+#   - If Model 2 DIC is much lower (>5 points): section matters
+#   - If similar: section doesn't add explanatory power
+#
+# Next step: Compare Model 2 vs Model 3 (spatial)
+#   - If spatial model is much better: continuous spatial patterns exist
+#   - If section model is better: discrete geographic differences
+#   - Both could be important!
+
+## ===== END MODEL 2 =====
 ```
 
 Both models ran, which is great!
 
-### 3 Include spatial effects without herd
+As of now (2.1), model 2 has a DIC/WAIC of ~518, while model 1 has a DIC/WAIC of 522. Model 2's DIC is lower by 42 units, meaning that the environmental covariates and/or the random effect *could* improve model fit. 
 
-This model includes a spatial effect but no herd-level effects
+### Model 3: Full Spatial Model With SPDE
+
+This model is a mixed-effects model and includes host demographics and environmental variables as fixed effects. This model also contains a spatial component and serves to fit models with continuous spatial random effects using INLA-SPDE. This is the most complex model of our model sets, capturing spatial autocorrelation patterns across KNP. This allows disease burden to vary smoothly across the park. The full equation is given by:
+
+y ~ -1 + Intercept + SexFemale + SexMale + age.years + BCS.Average + elevation + fall.2023.NDVI + f(spatial.field, model=spde)
+
+Before running the spatial model, it's good to check that the mesh works. This is an example from Henri of how the 'my_mesh_function' constructs the mesh, and how he saves it to the wd. Notice that as the triangles approach the KNP boundary, they get smaller. 
+
+```{r example_mesh}
+#Mesh list
+mod.mesh.list <-
+#lapply(1:length(resp), function(x){ - uncomment this line to loop through all response variables listed in `resp` (in this case, two)
+lapply(1:1, function(x){
+my_mesh_function(DT = schisto_spatial_df,
+                 Covar = covar_mod3,
+                 Resp = resp[[x]],
+                 LOCUTM = LOCUTMset,
+                 toUTM = toUTMset,
+                 BNDRY = kruger_shape, # change to Henri's boundary if issues arise
+                 Max_edge = Max_edge_set,
+                 Cutoff = Cutoff_set,
+                 Offset = Offset_set,
+                 DTsubset = TRUE)
+})
+
+
+plot(mod.mesh.list[[1]])
+meshdt <- mod.mesh.list #[[1]]
+mod.mesh.list[[1]]$n
+
+#save(mod.mesh.list, file = file.path(file_path, "inla.model","mod_mesh_list.R"))
+#load(file = file.path(file_path, "inla.model","mod_mesh_list.R"))
+rm(mod.mesh.list, meshdt)
+gc()
+
+### END ###
+```
+
+Now that we've checked that the mesh works, it's time to run the spatial model where the mesh will actually be fed into the code.
+
 ```{r mod3, eval=FALSE, include=FALSE}
-####
-# Model set 3
-####
+# ===== INITIALIZE STORAGE LISTS =====
+mod3.list <- list()        # Full INLA model objects
+mod3.stack.list <- list()  # Data stacks
+mod3.mesh.list <- list()   # Meshes (NOW ACTUALLY USED!)
+mod3.spde.list <- list()   # SPDE objects (NOW ACTUALLY USED!)
+mod3.error.list <- list()  # Track any errors during model fitting
 
-mod3.list <- list()
-mod3.stack.list <- list()
-mod3.mesh.list <- list()
-mod3.spde.list <- list()
-mod3.error.list <- list()
-
+# ===== MODEL LOOP =====
 for(x in 1:length(resp)){
   
-  # Progress indicator (will show in console, not in knitted doc) - tells you which model is running
+  # ----- Progress Tracking -----
   cat("Processing model 3:", resp[x], "-", x, "of", length(resp), "\n")
   
-  # Subset data - removes rows with missing values for the current response variable and covariates to create a clean dataset for that model
-  dt.sub <- my_dt_subset_function(DT = schisto_subset_data, 
-                                   Covar = covar, 
+  # ----- Step 1: Prepare Data -----
+  dt.sub <- my_dt_subset_function(DT = positive_only_schisto_df, 
+                                   Covar = covar_mod3, 
                                    Resp = resp[x])
   dt.sub <- as.data.frame(dt.sub)
-  
   cat("✓ Data subset complete, n =", nrow(dt.sub), "\n")
   
-  #scale response if necessary
-  #dt.sub[,resp[x]] <- scale(dt.sub[,resp[x]], scale = T)
+  # ----- Optional: Scale Response Variable -----
+  # Commented out - typically not needed for log-transformed data
+  # dt.sub[,resp[x]] <- scale(dt.sub[,resp[x]], scale = TRUE)T)
   
-  #mesh
+  # ----- Step 2: Create Mesh -----
+  # THIS IS CRITICAL - mesh defines the spatial structure!
   mesh <- my_mesh_function(DT = dt.sub,
-                           Covar = covar,
+                           Covar = covar_mod3,
                            Resp = resp[[x]],
                            LOCUTM = LOCUTMset,
                            toUTM = toUTMset,
-                           BNDRY = BdrY,
+                           BNDRY = kruger_shape,
                            Max_edge = Max_edge_set,
                            Cutoff = Cutoff_set,
                            Offset = Offset_set,
-                           DTsubset = TRUE)
+                           DTsubset = TRUE) # Creates mesh ONLY for locations where we have data
   mod3.mesh.list[[resp[x]]] <- mesh
   cat("✓ Mesh construction complete\n")
 
-  # make model.matrix
-  Xsub <- my_modelmatrix_function(DT = dt.sub, Covar = covar)#, CatVarSub = CatVarSub)
+  # ----- Step 3: Create Model Matrix -----
+  Xsub <- my_modelmatrix_function(DT = dt.sub, Covar = covar_mod3)#, CatVarSub = CatVarSub)
   Xsub <- as.matrix(Xsub)
-  
+ 
+  # Debug: Verify dimensions
   cat("Checking Xsub dimensions:\n")
   print(dim(Xsub))
   print(class(Xsub))
   
-  # make the stack
+  # ----- Step 4: Create INLA Stack -----
+  # KEY DIFFERENCE FROM MODELS 1 & 2: include_spatial = TRUE
+  # This adds the continuous spatial random field
   stack <- my_stack_function(Resp = resp[x],
-                             Covar = covar,
+                             Covar = covar_mod3,
                              DT = dt.sub, 
                              Mod.Matrix = Xsub,
                              GroupVar = NULL,
                              include_section = FALSE, # including section as a random effect may conflict with the spatial aspect
-                             include_spatial = TRUE,
+                             include_spatial = TRUE, # ADD spatial random effect here!
                              spdePriorFlat = spdePriorFlat_set,
                              spdepriorrange = spdepriorrange_set,
                              spdepriorsigma = spdepriorsigma_set,
                              LOCUTM = LOCUTMset,
-                             BNDRY = BdrY, 
+                             BNDRY = kruger_shape, 
                              #CatVarSub = "capture.year2009",
                              Max_edge = Max_edge_set,
                              Mesh.list = mesh)
- 
   cat("✓ Stack created\n")
-  
   mod3.stack.list[[resp[x]]] <- stack
   
-  #priors
+  # ----- Step 5: Set Priors -----
   sdres <- sd(dt.sub[,resp[x]], na.rm = T)
   pcprior <- list(prec = list(prior="pc.prec", param = c(3*sdres,0.01)))
-  
   cat("✓ Priors set\n")
   
+  # ----- Step 6: Create SPDE -----
+  # THIS MATTERS - defines the spatial covariance structure!
   SPDE <- my_spde_function(Mesh = mesh
                            , spdePriorFlat = spdePriorFlat_set
                            , spdepriorrange = spdepriorrange_set
-                           , spdepriorsigma = spdepriorsigma_set
-  )
+                           , spdepriorsigma = spdepriorsigma_set)
   mod3.spde.list[[resp[x]]] <- SPDE
-  
   cat("✓ SPDE created\n")
   
-  # drop some variables if necessary
+  # ----- Step 7: Filter Covariates (Optional) -----
   #if(resp[x] == "condition"){
   #  Xsub %>% dplyr::select((!contains(c("herd","condition")))) -> Xsub.filter
   #} else {
   #  Xsub %>% dplyr::select(!contains(c("herd"))) -> Xsub.filter
   #}
-  
   Xsub.filter <- Xsub
   
+  # Debug: Check covariate names
   cat("Xsub.filter column names:\n")
   print(colnames(Xsub.filter))
   cat("\nFormula being used:\n")
   
-  # set model forumlas
+  # ----- Step 8: Build Model Formula -----
+  # Formula now includes f(spatial.field, model = spde)
+  # set3.a, set3.c, set3.d defined elsewhere
   if(resp.family[x] == "gaussian"){
-    #modform <- as.formula(paste0(set3.a, paste0(colnames(Xsub.filter), collapse = " + "), set3.c))
-    modform <- as.formula("y ~ -1 + Intercept + X + f(spatial.field, model = spde)")
+    # Simplified formula for debugging - just intercept, covariates, and spatial
+    #modform <- as.formula("y ~ -1 + Intercept + X + f(spatial.field, model = spde)")
+    # Full formula would be:
+    modform <- as.formula(paste0(form.left, paste0(colnames(Xsub.filter), collapse = " + "), set3.a))
+    # Results in:
+    # y ~ -1 + Intercept + SexFemale + SexMale + age.years + BCS.Average + elevation +
+    #     f(spatial.field, model=spde) - Continuous spatial random effect!
   } else {
-    modform <- as.formula(paste0(set3.a, paste0(colnames(Xsub.filter), collapse = " + "), set3.d))   
+    modform <- as.formula(paste0(form.left, paste0(colnames(Xsub.filter), collapse = " + "), set3.b))   
   }
 
   cat("✓ Formula:", as.character(modform)[2], "\n")
   
+  # Debug: Check stack structure
   cat("Stack data contents:\n")
   stack_data <- inla.stack.data(stack, spde = SPDE)
   print(names(stack_data))
   cat("\n")
  
-  # run the model(s) 
+  # ----- Step 9: Fit INLA Model -----
   error_next = FALSE #For tryCatch
   set.seed(20084)
   
-  tryCatch(
+  tryCatch({
     mod.run <-
-      inla(modform,
-           family = resp.family[x],
-           data = inla.stack.data(stack, spde = SPDE),
-           control.inla = list(int.strategy = "auto"), 
-           control.compute = list(dic = TRUE, waic = TRUE),
-           control.predictor = list(A = inla.stack.A(stack)), safe=TRUE)
-    , error = function(e) {skip_to_next <<- TRUE;
-    print(paste0("error on:", resp[x]));
-    print(e$message);
-    mod3.error.list[[resp[x]]] <- resp[x]})
+      inla(
+        modform,
+        family = resp.family[x],
+        data = inla.stack.data(stack, spde = SPDE),
+        control.inla = list(int.strategy = "auto"),    # Let INLA choose integration strategy
+        control.compute = list(dic = TRUE, waic = TRUE),
+        control.predictor = list(A = inla.stack.A(stack)), 
+        safe=TRUE # True - safe mode to avoid numerical issues
+        )
+    }, error = function(e) {
+    error_next <<- TRUE
+    cat("========= ERROR =========\n")
+    cat("Error on:", resp[x], "\n")
+    cat("Error message:", e$message, "\n")
+    cat("========================\n")
+    mod3.error.list[[resp[x]]] <- resp[x]
+  })
+  
   if(error_next) {next}
   
   cat("✓ INLA model 3 complete\n")
   
+  # ----- Step 10: Store Results -----
   mod3.list[[resp[x]]] <- mod.run
+  
+  # Optional: Clean up memory during loop
   #rm(dt.sub, mesh, Xsub, Xsub.filter, stack, sdres, pcprior, SPDE, modform, mod.run)
   #gc()
-} ### END mod3.list ###
+} 
+
+### END MODEL 3 LOOP ###
 
 print("Completed model loop, now saving objects")
 
-# save lists - can get from model 3 code
+# ===== POST-PROCESSING =====
 
-rm(mod3.stack.list, mod3.spde.list)
-gc()
+# ----- Clean Up Memory -----
+# Keep mod3.list and mod3.mesh.list for analysis
+# Remove large intermediate objects
+#rm(mod3.stack.list, mod3.spde.list)
+#gc()
 
-#print("Completed saving objects now extracting model results...")
+# ===== EXTRACT MODEL FIT STATISTICS =====
 
-
-# Extract DIC
+# ----- Extract DIC -----
 mod3.dic.list <- list()
 for(i in 1:length(resp)){
   mod3.dic.list[[i]] <- mod3.list[[i]]$dic$dic
 }
 
+# Handle missing DIC values
 if(length(which(is.na(mod3.dic.list))) > 0){
 for(xna in 1:length(which(is.na(mod3.dic.list)))){
   sub <- (which(is.na(mod3.dic.list)))[1]
@@ -1210,25 +1829,29 @@ for(xna in 1:length(which(is.na(mod3.dic.list)))){
 }
 }
 
-
-# 
 mod3.dic.list <- do.call(rbind, mod3.dic.list)
-#write.csv(mod3.dic.list, file.path(file_path, "inla.model", "dic","mod3_dic.csv"))
+# Optional: Save DIC
+# write.csv(mod3.dic.list, file.path(file_path, "inla.model", "dic", "mod3_dic.csv"))
 
+# ----- Extract Model Characteristics -----
 
-
+# Number of observations per model
 n.samp <- 
   c(do.call(cbind,
             lapply(1:length(mod3.list), function(i){
               length(mod3.list[[i]]$residuals$deviance.residuals)
             })))
 
+# Number of unique individuals (random effect levels)
 n.ind <-
   c(do.call(cbind,
             lapply(1:length(mod3.list), function(i){
               mod3.list[[i]]$size.random[[1]]$n
             })))
 
+# ----- Extract Spatial Range Parameter (ρ) -----
+# Rho quantifies spatial autocorrelation strength
+# Higher rho = stronger spatial dependence
 rho <-
   round(
     c(do.call(cbind,
@@ -1250,163 +1873,170 @@ rho.975 <-
                 mod3.list[[i]]$summary.hyperpar["GroupRho for spatial.field","0.975quant"]
               }))),2)
 
+# Format as "mean (95% CI)"
 rho2 <- paste0(rho," (",rho.025,",",rho.975,")")
 
+# ----- Create Summary Table -----
 mod3.parameters <-
   data.frame(
-    n.samp = n.samp,
-    n.ind = n.ind,
-    rho = rho,
-    rho.025 = rho.025,
-    rho.975 = rho.975,
-    rho2 = rho2
+    n.samp = n.samp,      # Sample size
+    n.ind = n.ind,        # Number of individuals
+    rho = rho,            # Spatial correlation parameter
+    rho.025 = rho.025,    # Lower 95% CI
+    rho.975 = rho.975,    # Upper 95% CI
+    rho2 = rho2           # Formatted string
   )
 
-write.csv(mod3.parameters, file.path(file_path,"inla.model","dic","mod_table_values.csv"))
-rm(mod3.parameters, rho2, rho.975, rho.025, n.ind, n.samp, mod3.dic.list); gc()
+#write.csv(mod3.parameters, file.path(file_path,"inla.model","dic","mod_table_values.csv"))
+#rm(mod3.parameters, rho2, rho.975, rho.025, n.ind, n.samp, mod3.dic.list); gc()
 
+# ===== EXTRACT MODEL SUMMARIES =====
 
-
-
-# extract summary
 mod3.list.extract <-
   lapply(1:length(resp), function(x){
     myInla_extract(mod3.list[[x]], ModelName = resp[x])
   })
 
-save(mod3.list.extract, file = file.path(file_path, "inla.model","mod3.list.extract.R"))
-#load(file = file.path(file_path, "inla.model","mod3.list.extract.R"))
+# Save extracted summaries
+#save(mod3.list.extract, file = file.path(file_path, "inla.model","mod3.list.extract.R"))
+# To reload: load(file = file.path(file_path, "inla.model","mod3.list.extract.R"))
 
-#texreg::screenreg(mod3.list.extract)
-#texreg::texreg(mod3.list.extract,
-               #use.packages = FALSE,
-               #booktabs = TRUE,
-               #d.dolumn = TRUE,
-              # sideways = TRUE,
-              # float.pos = "ht",
-              # caption = "Results from model set 3.",
-              # label = "table:ch2_results_full_mod3",
-              # file = file.path(file_path, "tables", "ch2_table_results_full_mod3.tex"))
+# ----- Optional: Create Publication Tables -----
+# Uncomment to generate LaTeX regression tables
+# texreg::screenreg(mod3.list.extract)
+# texreg::texreg(mod3.list.extract,
+#                booktabs = TRUE,
+#                caption = "Results from spatial model (Model 3).",
+#                label = "table:results_mod3",
+#                file = file.path(file_path, "tables", "table_results_mod3.tex"))
 
-#texreg::texreg(mod3.list.extract[c(1: as.integer(length(mod3.list.extract)/2))],
-              # booktabs = TRUE,
-               #d.dolumn = TRUE,
-              # sideways = FALSE,
-              # threeparttable = TRUE,
-              # table = FALSE,
-              # stars = numeric(0),
-               #no.margin = TRUE,
-               #float.pos = "ht",
-               #scalebox = 0.5,
-              # use.packages = FALSE,
-              # caption.above = TRUE
-              # ,file = file.path(file_path, "tables", "ch2_table_results_full_mod3a.tex")
-#)
+# ===== SPATIAL FIELD VISUALIZATION =====
 
-#texreg::texreg(mod3.list.extract[c((as.integer(length(mod3.list.extract)/2)+1):length(mod3.list.extract))],
-               #booktabs = TRUE,
-              # d.dolumn = TRUE,
-              # sideways = FALSE,
-              # threeparttable = TRUE,
-               #no.margin = TRUE,
-               #float.pos = "ht",
-               #scalebox = 0.50,
-              # table = FALSE,
-              # use.packages = FALSE,
-              # caption.above = TRUE
-              # ,file = file.path(file_path, "tables", "ch2_table_results_full_mod3b.tex")
-#)
+cat("now extracting field plots...")
 
-print("now extracting field plots...")
-
-# Variable = "mean - What variable to plot e.g. "sd"
-# Rounding = TRUE - This bins the estimates, but hides small variation (you normally want to set this TRUE)
+# ----- Create Spatial Field Maps -----
+# Shows estimated spatial random effects across Kruger
+# Variable options: "mean" (posterior mean), "sd" (uncertainty), "0.025quant", "0.975quant"
+# Rounding = TRUE bins estimates for clearer visualization)
 
 mod3.list.plot <-
   lapply(1:length(resp), function(x){
-    ggField <- 
-    my_ggField(mod3.list[[x]], Mesh = mod3.mesh.list[[x]], Str_name = "Range for ", Variable = "mean",
-               Res = 300, FitScale = "Link", Colour_scale = T, Palette = pallete_list[8],
-               Rounding = TRUE) +
+    ggField <- my_ggField(
+      mod3.list[[x]], 
+      Mesh = mod3.mesh.list[[x]], 
+      Str_name = "Range for ", 
+      Variable = "mean",                  # Plot posterior mean of spatial field
+      Res = 300,                          # Grid resolution for projection
+      FitScale = "Link",                  # Plot on link scale (log scale for Gaussian)
+      Colour_scale = T, 
+      Palette = pallete_list[8],
+      Rounding = TRUE                     # Bin values for cleaner map
+    ) +
       ggtitle(resp[x]) +
       theme_classic() +
       my_plot_settings
-    ggField <- ggField + geom_sf(data = kruger_shape, inherit.aes = FALSE, fill = NA, color = "black", linewidth = 1) 
+    
+    # Add KNP boundary overlay
+    ggField <- ggField + 
+      geom_sf(data = kruger_shape, inherit.aes = FALSE, 
+              fill = NA, color = "black", linewidth = 1) 
+    
+    # Save underlying data
     data.table::fwrite(ggField$data, file.path(file_path, "inla.model", "dic", "dic_fieldplots",
                                                 paste0("mod3_",x,"_fieldplot_dt.csv")))
     ggField 
   })
-save(mod3.list.plot, file = file.path(file_path, "inla.model","mod3_list_ggfield_plot.R"))
-#load(file = file.path(file_path, "inla.model","mod3_list_ggfield_plot.R"))
 
+#save(mod3.list.plot, file = file.path(file_path, "inla.model","mod3_list_ggfield_plot.R"))
+# To reload: load(file = file.path(file_path, "inla.model","mod3_list_ggfield_plot.R"))
 
-print("Now combining the field plots ...")
+# ----- Combine Field Plots into Multi-Panel Figure -----
+cat("Now combining the field plots ...")
 
-mod3_ggfield <-
-    patchwork::wrap_plots(mod3.list.plot)+
-    plot_annotation(tag_levels = 'a') +
-    plot_layout(guides='keep')
+mod3_ggfield_combo <- patchwork::wrap_plots(mod3.list.plot) +
+    plot_annotation(tag_levels = 'a') +     # Label panels a, b, c...
+    plot_layout(guides='keep')              # Keep legends
 
-my_ggsave_plots(plotname = mod3_ggfield,
+my_ggsave_plots(plotname = mod3_ggfield_combo,
                 plot_path = file.path(file_path, "figures"),
                 plot_device = "png",
                 height = textwidth,
                 width = textheight,
                 units = "mm")
-rm(mod3.list.plot); gc()
+#rm(mod3.list.plot)
+#gc()
 
+# ===== SPATIAL RANGE ANALYSIS =====
 print("Extracting the range values ...")
 
-mod3_inlarange <-
-    my_INLARange(mod3.list,
-                 mod3.mesh.list,
-                 Str_name = "Range for ",
-                 MaxRange = 10000,
-                 ModelNames = resp) +
+# ----- Plot Spatial Correlation Decay -----
+# Shows how correlation decreases with distance
+# X-axis = distance, Y-axis = correlation
+# Helps interpret spatial scale of disease patterns
+mod3_inlarange_2.0 <- my_INLARange(
+  mod3.list,
+  mod3.mesh.list,
+  Str_name = "Range for ",
+  MaxRange = 10000,           # Plot up to 10km
+  ModelNames = resp
+) +
     theme_classic() +
-    my_plot_settings    
-my_ggsave_plots(mod3_inlarange,
+    my_plot_settings   
+
+my_ggsave_plots(mod3_inlarange_2.0,
                 plot_path = file.path(file_path, "figures"),
                 plot_device = "png",
                 height = textwidth,
                 width = textheight,
                 units = "mm") 
 
-# halving range
-mod3.list.halvingrange.dt <-
-  my_INLARange(mod3.list,
-               mod3.mesh.list,
-               Str_name = "Range for ",
-               MaxRange = 10000,
-               ModelNames = resp,
-               Return = "Data",
-               Resolution = 10000)
-#mod3.list.halvingrange.dt
+# ----- Calculate Halving Range -----
+# Distance at which spatial correlation drops to 50%
+# Key metric for understanding spatial scale of patterns
+# e.g., "Disease is correlated within 3km, independent beyond that"
+mod3.list.halvingrange.dt <- my_INLARange(
+  mod3.list,
+  mod3.mesh.list,
+  Str_name = "Range for ",
+  MaxRange = 10000,
+  ModelNames = resp,
+  Return = "Data",       # Return data instead of plot
+  Resolution = 10000)    # High resolution for precise halving distance
+
 data.table::fwrite(mod3.list.halvingrange.dt, file = file.path(file_path, "inla.model", "mod3_list_halvingrange_dt.csv"))
 
-
-mod3.list.halvingrange <-
-  mod3.list.halvingrange.dt %>%
+# Find distance where correlation = 0.5
+mod3.list.halvingrange <- mod3.list.halvingrange.dt %>%
   group_by(Model) %>%
-  slice(which.min(abs(Cor.M - 0.5))) %>%
+  slice(which.min(abs(Cor.M - 0.5))) %>%       # Find closest to 50% correlation
   dplyr::mutate(Cor.M = round(Cor.M, 2)) %>%
   as.data.frame()
-mod3.list.halvingrange
-write.csv(mod3.list.halvingrange, file = file.path(file_path, "inla.model","mod3_halvingrange.csv"))
-#mod3.list.halvingrange <- read.csv(file = file.path(file_path, "inla.model","mod3_halvingrange.csv"), header = T)
 
+cat("Halving range (distance to 50% correlation):\n")
+print(mod3.list.halvingrange)
 
-# clean up
-rm(mod3.list.extract, mod3.list, mod3.list.halvingrange, mod3.list.halvingrange.dt,
-   mod3_inlarange, mod3_ggfield, mod3.list.plot, mod3.mesh.list)
-gc()
+#write.csv(mod3.list.halvingrange, file = file.path(file_path, "inla.model","mod3_halvingrange.csv"))
 
+# INTERPRETATION GUIDE:
+# If halving range = 5km → locations 5km apart have ~50% correlation
+#                       → locations 10km apart have ~25% correlation
+#                       → locations 15km apart are nearly independent
+# Smaller halving range = more localized spatial patterns
+# Larger halving range = broader spatial patterns
 
+# ===== FINAL CLEANUP =====
+#rm(mod3.list.extract, mod3.list, mod3.list.halvingrange, mod3.list.halvingrange.dt,
+   #mod3_inlarange, mod3_ggfield, mod3.list.plot, mod3.mesh.list)
+#gc()
+
+# ----- Log Completion -----
 mod.logfile <- paste0("completed mod3 run on: ", Sys.time())
 data.table::fwrite(as.list(mod.logfile), append = T,
                    file = file.path(file_path, "inla.model", "logfiles", "inlarunlog_mod3.txt"))
 
-print("All done !!!")
+cat("All done !!!")
 
-## END
+## ===== END MODEL 3 =====
 ```
+
+Last edit (2.13) was to transform covariates, add in mean daytime LST, run all 3 models, and change the binning for the hotspot map to bin to the nearest 0.001 instead of 0.01.
