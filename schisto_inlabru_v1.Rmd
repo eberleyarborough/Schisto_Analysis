@@ -1,0 +1,1738 @@
+---
+title: "schisto_inlabru_V1"
+author: "Eberle Yarborough"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+This document is basic exploration of the data to be included in the *Schistosoma* spp. spatial Bayesian analysis, before running a full INLA model. Here, we will use `inlabru` to explore the schisto data and determine if there is any spatial dependency.
+
+**Previous Model Runs**
+  - 3.5.26:
+    - Mesh resolution = 25km
+    - Range prior = 37, 0.05
+    - sigma_u prior = 2, 0.05
+    - Random effects = SRF only
+    - Env covariates: TWI, MSI, EVI, clay %, weighted distance to fire
+      - Smoothers: weighted distance to fire - RW1
+    - Models:
+      - Bernoulli GAM: env + demographics
+      - Bernoulli GAM: env + demographics + SRF
+      - Bernoulli GLM: SRF + % clay
+    - Lowest WAIC model = SRF + clay % only
+  - 3.6.26:
+    - Mesh resolution = 15km
+    - Range prior = 25, 0.05
+    - sigma_u prior = 2.5, 0.05
+    - Random effects = SRF only
+    - Env covariates = TWI, MSI, EVI, clay %, weighted distance to fire
+      - Smoothers: weighted distance to fire - RW2
+    - Models:
+      - Bernoulli GAM: env + demographics
+      - Bernoulli GAM: env + demographics + SRF
+      - Bernoulli GLM: SRF + age (years)
+    - Lowest WAIC model = SRF and age only
+  - 3.10.26:
+    - Mesh resolution = 15km
+    - Range prior = 25, 0.95
+    - sigma_u prior = 2, 0.05
+    - Random effects = SRF only
+    - Env covariates = TWI, MSI, EVI, clay %, weighted distance to fire
+      - Smoothers: all env covariates, RW2
+    - Models:
+      - Bernoulli GAM: env + demographics
+      - Bernoulli GAM: env + demographics + SRF
+      - Bernoulli GLM: SRF + log1p(age (years))
+  - 3.17.26:
+    - Mesh resolution = 15km
+    - Range prior = 25, 0.95
+    - sigma_u prior = 2, 0.05
+    - Random effects = SRF only
+    - Env covariates = TWI, MSI, EVI, clay %, weighted distance to fire
+      - Smoothers: TWI, MSI, weighted distance to fire - all RW2
+    - Models:
+      - Bernoulli GAM: env + demographics
+      - Bernoulli GAM: env + demographics + SRF
+      - Bernoulli GLM: SRF + log1p(age (years))
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	eval = TRUE,
+	echo = TRUE,
+  include = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+
+#' We need the following packages:
+library(lattice)
+library(ggplot2)
+library(sf)
+library(gstat)
+#' If you've updated R recently, you have to re-install INLA from their website
+#' This is for the stable version:
+#install.packages("INLA",repos=c(getOption("repos"),INLA="https://inla.r-inla-download.org/R/stable"), dep=TRUE)
+library(INLA)
+library(inlabru)
+library(DHARMa)
+library(dplyr)
+library(glmmTMB)
+library(rnaturalearth)
+library(scales)
+library(cowplot)
+library(tidyr)
+source("/Users/eberleyarborough/Documents/Coding Help/INLA tutorials/highland_stats_INLA_course/AllRCodeInlabru/HighstatLibV14.R") #' Highland Statistics support file
+
+#' Set the working directory and import the data (should be the project directory).
+setwd("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/Schisto/Schisto_Analysis")
+```
+
+### Section 1: Importing the Data & Exploration -----
+
+The question we are attempting to answer is "What are the drivers of *Schistosoma* spp. infection in African buffalo (*Syncerus caffer*) within Kruger National Park (KNP)?" We have:
+ - Host demographics: age (factor with 3 levels OR continuous), sex (factor with 2 levels), average body condition score (discrete)
+ - Environmental covariates: preceding wet season (Jan 1 - Apr 30, 2023) enhanced vegetation index (EVI) and moisture stress index (MSI); proportion of clay in the soil up to 30cm in depth; weighted distance to pre-capture fires (Apr 2022 - March 2023); and the topographical wetness index (TWI) - a measure of water accumulation and flow on the landscape
+ - Locations: 2023 buffalo mass-capture (cross-sectional) locations across KNP
+
+```{r importing-and-transforming-data}
+#' Step 1: Import the disease data -----
+#' This file contains the schisto results, as well as the buffalo demographics,
+#' capture locations, and elevation at those capture locations:
+schisto_base<- read.csv("schisto_with_cap_demo_and_elev.csv")
+
+#' converting to a spatial object
+schisto.sf <- st_as_sf(schisto_base,
+                  coords = c("x.east", "y.south"),
+                  crs    = 32736)
+
+#' Setting the CRS, converting to KM (it is best to work with small numbers in inlabru)
+crs.Target <- fm_crs("EPSG:32736")  # Target for KNP in UTM 36S
+CRS.km     <- fm_crs_set_lengthunit(crs.Target, "km") # Converting to km instead of m
+
+#' We now transform the spatial object to the kilometre-based coordinate 
+#' system and extract the coordinates as numeric variables. These will 
+#' be used later when building spatial models.
+schisto2.sf <- st_transform(schisto.sf, CRS.km)
+Coords <- st_coordinates(schisto2.sf)
+schisto2.sf$Xkm <- Coords[, 1]
+schisto2.sf$Ykm <- Coords[, 2]
+
+#' Dropping unnessary columns from the schisto data frame
+schisto2.sf <- schisto2.sf %>%
+  select("animal.ID", "age.years", "age.class", "Sex", "BCS.Average", "Result", "Xkm", "Ykm", "geometry")
+
+#' Step 2: Import the environmental covariates -----
+#' Read in the .csv file with the environmental covariates. NOTE: This file
+#' contains data for all capture locations, not just those that are schisto positive.
+env_data <- read.csv("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/CSVs/cap_and_env_data.csv")
+env_data <- env_data %>%
+  select("animal.ID", "capture.date", "capture.day", "capture.group.by.day", "approx.herd.size", "weighted_dist_to_fire", "topo_wetness_index", "clay_percent_30cm", "jan_apr_23_evi", "jan_apr_23_msi")
+
+#' Join to schisto data
+schisto.complete.sf <- left_join(schisto2.sf, env_data, by = "animal.ID")
+
+#' Step 3: Transform Data
+
+#' It's good to convert the character "positive/negative" results to 
+#' something binary and numeric (0/1, where 1 is positive)
+schisto.complete.sf <- schisto.complete.sf %>%
+  mutate(result01 = ifelse(Result == "positive", 1, 0))
+
+#' And convert Sex, age class, and capture group by day to factors
+schisto.complete.sf$fage.class <- factor(schisto.complete.sf$age.class)
+schisto.complete.sf$fSex <- factor(schisto.complete.sf$Sex)
+schisto.complete.sf$fcapgroup <- factor(schisto.complete.sf$capture.group.by.day)
+
+#' We'll also log1p transform age in case we want to model with it later on. We
+#' also use the `log1p()` function here instead of just `log()` because we would
+#' end up zero-inflating our dataset by taking the ln of 1 ( = 0).
+schisto.complete.sf <- schisto.complete.sf %>%
+  mutate(log.age = log1p(age.years))
+
+#' Step 3: Import the KNP boundary and match CRS -----
+#' To provide geographic context, we load a map of Kruger that will be 
+#' used to visualize the study area and the sampling locations.
+kruger_shape <- st_read("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/SANParks KNP Shapefiles/KNP_polygon/KNP_polygon.shp")
+
+#' Transform to UTM Zone 36S in km
+kruger.km <- st_transform(kruger_shape, crs = CRS.km)
+
+#' Finally, we plot the KNP boundary together with the spatial distribution of 
+#' the capture locations to confirm that the data are correctly georeferenced. 
+ggplot() +
+  geom_sf(data = kruger.km, fill = "transparent") +
+  geom_sf(data = schisto.complete.sf) +
+  theme_minimal()
+
+#' Confirm that the data and the map share the same CRS: 
+st_crs(kruger.km) == st_crs(schisto.complete.sf)
+```
+
+First, we'll define all of our mesh components and construct the mesh we'll use for the spatial random field (SRF).
+
+```{r building-the-mesh}
+#' Step 1: Making the mesh -----
+
+#' To get a good idea of mesh settings for the SRF, we first need to get a sense what the distances are between the 
+#' sampling locations. 
+Loc <- cbind(schisto.complete.sf$Xkm, schisto.complete.sf$Ykm)
+D   <- dist(Loc)
+par(mfrow = c(1,1), mar = c(5,5,2,2))
+hist(D, 
+     freq = TRUE,
+     main = "", 
+     xlab = "Distance between sites (km)",
+     ylab = "Frequency")
+#' Sites are anywhere from 0-350km apart, so anything small scale is probably < 50 km.
+
+#' The main tools to control the mesh are:
+#' - max.edge: The largest allowed triangle length. The lower the value 
+#'             for max.edge the higher the resolution. This should be "small-scale"
+#'             based off of your sampling locations (1/5 the resolution).
+#' - cutoff:   Sites with a distance value smaller than the cutoff 
+#'             are modeled by a single vertex in the mesh.
+#'             Set the cutoff to 1/5 of the maxedge of the inner area.
+#' - boundary: Useful for islands and fjords, but you can make it hug your sampling
+#'             locations tighter by making it nonconvex.
+#  - offset:   Determines how far the inner and outer boundaries extend.
+#' - Inner area / outer areas:
+#'             Is to avoid potential numerical estimation problems for 
+#'             the points close to the boundary. General recommendation is: 1:5.
+#'             This explains the:   max.edge = c(1, 5) * MaxEdge in the 
+#'             code below.
+
+#' Now we should define boundaries for the spatial mesh.
+#' First, define the resolution of the mesh based off of our distances between sites.
+#' This can be adjusted to get at finer-scale (local) spatial patterns. 
+MeshResolution <- 15               #' in km.
+MaxEdge  <- MeshResolution / 5    #' good rule of thumb is to have max edge set to 1/5 the resolution
+
+#' #' fm_nonconvex_hull makes a non-convex area around the sampling
+#' locations - the inner boundary. You can control how close the blue line is 
+#' to the sites with the 'convex' argument. Larger numbers here mean the inner
+#' hull is less tightly bound to the capture sites. 
+inner.hull <- fm_nonconvex_hull(Loc, convex = -0.07, crs = st_crs(schisto.complete.sf))
+#' Results
+plot(inner.hull)
+points(Loc)
+
+#' Convert the inner, nonconvex hull to an sf object
+inner.hull_sf <- st_as_sf(inner.hull)
+
+#' Then we make an outer ring by buffering the inner hull by about one
+#' times the expected range. That distance is big enough that, by the 
+#' time the field reaches the outer edge, most correlation has died 
+#' away—so boundary effects are small. We simplify the outer boundary
+#' a little; we don’t need every little curve for meshing purposes.
+
+outer_sf   <- st_buffer(inner.hull_sf, 
+                        dist = MaxEdge * 5)  
+outer_sf_simple <- st_simplify(outer_sf,
+                               dTolerance = 0.05 * MaxEdge * 5,
+                               preserveTopology = TRUE)
+
+#' Plot inner and outer boundaries
+ggplot() +
+  geom_sf(data = outer_sf_simple, 
+          col = "red",  fill = NA, alpha = 0.5) +
+  geom_sf(data = inner.hull_sf,    col = "blue", fill = NA) +
+  geom_sf(data = kruger.km, fill = NA, alpha = 0.5) +
+  geom_sf(data = schisto.complete.sf, color = "black", size = 0.75) +
+  theme_minimal() +
+  labs(x = "Easting (km)", y = "Northing (km)")
+
+#' Before we can use the inner and outer boundaries in fm_mesh_2d(), we 
+#' need to convert the two sf polygons into their outlines (the lines 
+#' that trace around the polygons). The mesher does not take filled 
+#' shapes; it only works with these outlines, which it represents 
+#' as boundary segments.
+inner.hull_segm <- fm_as_segm(inner.hull_sf)
+outer.hull_segm <- fm_as_segm(outer_sf_simple)
+
+#' Make the mesh with the new boundary segments
+mesh1 <- fm_mesh_2d_inla(
+  loc      = Loc,
+  boundary = list(inner.hull_segm, outer.hull_segm),
+  max.edge = c(1, 5) * MaxEdge,  
+  cutoff   = MaxEdge / 5)
+fm_crs(mesh1) <- st_crs(schisto.complete.sf)  
+
+#' Size of mesh
+mesh1$n 
+#' 7071 nodes for 557 observations - decent. We can to set the resolution to 
+#' finer-scale if we'd like.
+
+#' Ensure the mesh has the same CRS as KNP 
+fm_crs(mesh1) <- st_crs(kruger.km)  
+
+#' Plot the study area on the mesh
+knp.mesh.plot <- ggplot() +
+            theme_minimal() +
+            labs(title = "Study area in UTM (km)") +
+            geom_fm(data = mesh1) +
+            geom_sf(data = schisto.complete.sf,
+                    alpha = 0.5,
+                    size = 0.5)  +
+            geom_sf(data = kruger.km,
+                    fill = "transparent", 
+                    col = "red") 
+knp.mesh.plot
+```
+
+Now we'll explore the data a bit more to look at any underlying relationships, nonlinear patterns, etc.
+
+```{r data-exploration}
+#' Step 1: Determine if there are any missing values
+MyVar <- c("animal.ID", "age.years", "log.age", "age.class", "Sex", "BCS.Average", "result01",
+           "capture.date", "capture.day", "capture.group.by.day", "approx.herd.size",
+           "weighted_dist_to_fire", "topo_wetness_index", "clay_percent_30cm",
+           "jan_apr_23_evi", "jan_apr_23_msi")
+colSums(is.na(schisto.complete.sf[,MyVar]))
+#' Looks like missing values in herd size, EVI, and MSI (11 in each).
+
+#' We'll drop NA rows
+#' Now we'll remove any NA columns
+schisto.complete.sf <- schisto.complete.sf %>%
+  drop_na()
+#' Left with 557 observations
+
+#' For some analyses, it is convenient to work with a standard data frame 
+#' rather than an sf object. We therefore drop the geometry column and 
+#' store the result separately.
+schisto.complete.df <- st_drop_geometry(schisto.complete.sf)
+
+#' It's also a good idea to standardize continuous covariates - this can only be done after NA is dropped.
+#' The `MyStd()` function is a custom function in the Highland Statistics 
+#' script.
+schisto.complete.sf$weighted_dist_to_fire.std <- MyStd(schisto.complete.sf$weighted_dist_to_fire)
+schisto.complete.sf$topo_wetness_index.std <- MyStd(schisto.complete.sf$topo_wetness_index)
+schisto.complete.sf$clay_percent_30cm.std <- MyStd(schisto.complete.sf$clay_percent_30cm)
+schisto.complete.sf$jan_apr_23_evi.std <- MyStd(schisto.complete.sf$jan_apr_23_evi)
+schisto.complete.sf$jan_apr_23_msi.std <- MyStd(schisto.complete.sf$jan_apr_23_msi)
+
+#' Step 2: Look the depth of the data - do we have enough observations with the
+#' given covariates?
+
+#' How many observations per date?
+table(schisto.complete.sf$capture.date)
+#' Anywhere from 5 to 29
+
+#' How many groups per day?
+table(schisto.complete.sf$capture.group.by.day)
+#' as much as 5 per day - consider using as a random effect?
+
+#' What's the range of herd sizes?
+hist(schisto.complete.sf$approx.herd.size)
+#' looks like 50 - 600 animals per herd - consider using as a random effect?
+
+#' Are herd size and capture group per day related?
+plot(x = schisto.complete.sf$capture.group.by.day,
+     y = schisto.complete.sf$approx.herd.size,
+     xlab = "Capture Group by Day",
+     ylab = "Approx. Herd Size")
+#' fairly even spread of herd sizes across capture groups - pick one to use
+#' as a random effect, not both
+
+#' How many per age class?
+table(schisto.complete.sf$age.class)
+#' 71 calves, 387 subadults, 96 adults, 3 old adults - would need to combine
+#' adults and old adults if wanting to use this as a covariate or as an 
+#' interaction term
+
+#' What is the age range?
+hist(schisto.complete.sf$age.years)
+hist(schisto.complete.sf$log.age)
+range(schisto.complete.sf$age.years)
+#' as young as 0.5 to 20.27 years
+
+#' What are the differences in sex?
+table(schisto.complete.sf$Sex) #' enough observations between sexes
+table(schisto.complete.sf$Sex, schisto.complete.sf$result01) #' no separation
+#' there are positive and negative males and females - no category has 0 observations,
+#' which means we can use a Bernoulli distribution of the response variable.
+#' What about with age?
+table(schisto.complete.sf$age.class, schisto.complete.sf$result01)
+#' The only issue we have here is with "old adult," but we already said we would
+#' likely combine with "adult" since there are only 3 observations of old adults,
+#' anyway.
+
+#' Step 3: Check for outliers - the `MyDotplot.ggp2()` function comes from the
+#' Highland Statistics custom script.
+MyDotplot.ggp2(schisto.complete.df, MyVar, Ncol = 3, TextSize = 10,
+               PointSize = 0.5, DropLabels = FALSE)
+#' No obvious outliers, but possible collinearity or non-linear patterns.
+
+#' Step 4: Assess for collinearity
+#' Make a pairplot - the `Mypairs()` function comes from the Highland Statistics
+#' custom script.
+MyVar <- c("Xkm", "Ykm", "log.age", "BCS.Average", "clay_percent_30cm",
+           "jan_apr_23_evi", "jan_apr_23_msi", "topo_wetness_index",
+           "weighted_dist_to_fire")
+Mypairs(schisto.complete.df[,MyVar])
+#' There might be some collinearity between Xkm and/or Ykm and percentage of clay
+#' in the soil, as well as EVI and MSI, which makes sense, as these are spatial
+#' covariates.
+
+#' We only should be nervous if a Pearson correlation is larger than 0.8; however,
+#' that doesn't mean we should ignore moderately high (~0.6) values, like
+#' those for X/Ykm and clay percentage.
+
+#' If we had temporal (longitudinal) data, here's where we would check to see how/if
+#' covariates change over time by plotting every covariate vs. year.
+
+#' Do covariates differ by clay percentage in the soil? We anticipate there 
+#' may be a relationship, as the clay content influences water retention
+#' on the landscape (MSI) and vegetation growth (EVI).
+#' First, we need to put the data into "long format" for easier plotting.
+GatherTheseCols <- c("jan_apr_23_msi", "jan_apr_23_evi", "topo_wetness_index",
+                     "weighted_dist_to_fire", "log.age")
+schist_long <- gather(data = schisto.complete.df,
+                      key = "ID",
+                      value = "AllX",
+                      all_of(GatherTheseCols),
+                      factor_key = TRUE)
+dim(schist_long)
+
+#' Check to see how much variation in EVI/MSI is explained by clay percentage
+#' with SLR.
+test_msi <- lm(jan_apr_23_msi ~ clay_percent_30cm, data = schisto.complete.sf)
+summary(test_msi)
+#' approximately 1.8%
+
+test_evi <- lm(jan_apr_23_evi ~ clay_percent_30cm, data = schisto.complete.sf)
+summary(test_evi)
+#' Less than 1%
+
+#' What about variation in MSI explained by EVI?
+test_msi_evi <- lm(jan_apr_23_msi ~ jan_apr_23_evi, data = schisto.complete.sf)
+summary(test_msi_evi)
+#' About 25%, so not insignificant, but shouldn't throw too many issues in the model
+
+
+#' Step 5: Continuous covariates vs. disease data
+#' Plot each continuous covariate against the presence/absence data. Note:
+#' the disease data MUST be in numeric 0/1 form to see if relationships
+#' are non-linear with this plot.
+ggplot(data = schist_long, aes(x=AllX, y = result01)) +
+  geom_point(size = 1, alpha = 0.5) +
+  labs(x = "Covariate", y = "Disease Status") +
+  theme(text = element_text(size = 15),
+        axis.text.x = element_text(angle = 45,
+                                   hjust = 1,
+                                   size = 5)) +
+  geom_smooth(method = "gam",
+              method.args = list(family = "binomial"),
+              se = FALSE) +
+  facet_wrap(.~ID, scale = 'free_x', ncol = 2)
+#' Only non-linear pattern appears to be weighted distance to fire, so 
+#' we might need a smoother for this covariate.
+
+#' Step 6: Assess for dependency
+#' Here are the spatial patterns of the capture locations (using base R)
+xyplot(Ykm ~ Xkm,
+       aspect = "iso",
+       col = 1,
+       pch = 16,
+       data = schisto.complete.sf)
+
+xyplot(Ykm ~ Xkm | fcapgroup,
+       aspect = "iso",
+       col = 1,
+       pch = 16,
+       data = schisto.complete.sf)
+#' It looks like extra captures (like 1a 1b, 2a 2b) happened in the north,
+#' and up to 5 captures per day happened in the southeast, near Lower Sabie.
+#' Most capture days had only 2 captures per day. Just something to think about
+#' if we wanted to include capture group by day in the analyses in any way. We 
+#' would probably remove 1a/b and 2a/b since there's no real variation there, and
+#' we would just call them "1" and "2."
+
+#' Here's the same kind of plot as a ggplot
+ggplot(data = kruger.km) + #' boundary
+  geom_sf(fill = "transparent") + #' no fill
+  geom_sf(data = schisto.complete.sf, #' capture locations
+          size = 0.75, #' size of the points
+          alpha = 0.5) + #' transparency of the points
+  theme_minimal() +
+  labs(title = "Study Area in UTM (km)")
+
+#' And split up by capture group
+ggplot(data = kruger.km) +
+  geom_sf(fill = "transparent") +
+  geom_sf(data = schisto.complete.sf,
+          size = 0.75,
+          alpha = 0.5) +
+  theme_minimal() +
+  labs(title = "Study Area in UTM (km)") +
+  facet_wrap(~fcapgroup)
+```
+
+To conclude about our data exploration:
+- We have spatial patterns in some of our covariates, which isn't surprising.
+- We don't have any quasi-complete separation in the pos/neg disease data.
+- Herd size or capture group could be used as random effects; however, if using
+capture group by day, we should collapse 1a/b and 2a/b into 1 and 2.
+- If we include weighted distance to fire, it should probably be a GAM.
+- We can consider smoothers for the other environmental covariates.
+- If we want to use age class, we should collapse "adult" and "old adult" since
+there are only 3 "old adult" animals.
+- It doesn't look like we have any dependency (other than potential spatial
+dependency).
+
+### Section 2: Model Components -----
+
+#### Subsection 2.1: Formulating the Bernoulli GAM
+
+There are two ways to end up with a Bernoulli GLM/GAM for these data.
+1. If your question is: What is driving presence/absence of schisto,
+    then you can go straight to a Bernoulli GLM/GAM.
+2. The abundance data have a high % of zeros, and a Poisson GLM cannot
+    cope with this high % of zeros. It is an option (among many) to 
+    apply a hurdle model. In such a model, we analyse the
+    absence/presence data with a Bernoulli GLM/GAM, the presence-only
+    data with a truncated Poisson GLM/GAM and then glue them together. 
+    You might do this analysis *after* looking at the one in option 1 -
+    after you've figured out what is driving presence/absence, then you
+    can look at abundance.
+
+Here, we'll apply the following equation:
+
+**Model 1:**
+  result01_i ~ Bernoulli(Pi_i)
+  E[result01] = Pi_i
+  var[result01] = Pi_i * (1 - Pi)
+  
+With our covariates, this shakes out to:
+  logit(Pi_i) = Intercept + age.years_i + BCS.Average_i + s(weighted_dist_to_fire.std) +
+                topo_wetness_index.std_i + clay_percent_30cm.std_i +
+                jan_apr_23_evi.std_i + jan_apr_23_msi.std_i 
+
+Alternatively, with the log1p age and the smoother terms for all environmental 
+covariates:
+  logit(Pi_i) = Intercept + log.age_i + BCS.Average_i + f(weighted_dist_to_fire) +
+                f(topo_wetness_index) + f(clay_percent_30cm) +
+                f(jan_apr_23_evi.std) + f(jan_apr_23_msi) 
+
+There's also the option of including herd size or capture group as a random
+effect. But we can do that in later models.
+
+We can write the logit link function also as:
+
+           exp(Intercept + Covariates_i)  
+  Pi_i = ---------------------------------------------------------------------------
+         1 + exp(Intercept + Covariates_i)  
+
+
+**Model 2:**
+This is the same as model 1 (Bernoulli GAM) but with spatial dependency.
+
+  logit_(Pi_i) = Intercept + Covariates + u_i, where u_i are the spatially
+  correlated random effects
+  
+We can write this logit link function as: 
+
+           exp(Intercept + Covariates_i + u_i)  
+  Pi_i = ------------------------------------------
+         1 + exp(Intercept + Covariates_i+ u_i)  
+
+
+**Model 3:**
+This model will assess whether or not the covariates and the spatial
+field interact with one another.
+
+  logit_(Pi_i) = Intercept + clay_percent_30cm.std_i + u_i, where u_i is
+  the spatially correlated random effect.
+  
+  Note: this model does not include any other covariates besides percentage
+  of clay, as we think this perhaps has the most spatial dependency.
+
+The logit link function is very similar to those written above:
+
+           exp(Intercept + log1p(age.years)_i + u_i)  
+  Pi_i = --------------------------------------------
+         1 + exp(Intercept + log1p(age.years)_i + u_i)  
+
+Keep in mind that the smoother we included for weighted distance to fire may
+not work well if the covariate values are clumped (i.e., if we don't have consistent
+sampling across the sampling area, which we don't), so we should define the
+RW1 or RW2 smoothers on a set of knots and interpolate the values of the 
+smoother at intermediate values.
+
+#### Subsection 2.2: Smoothers and Priors
+
+*From the Highland Stats course:*
+
+The three main approaches for implementing smoothers in INLA are:
+ 1. Random walk of order 1 (RW1).
+ 2. Random walk of order 2 (RW2).
+ 3. One-dimensional SPDE approach. 
+
+Other options exist, but these three are the most commonly used. 
+
+The RW1 model assumes that successive values of the smoother differ only 
+slightly and takes into account only "primary" neighboring information:
+
+ f(x_t) - f(x_{t-1})  ~ N(0, sigma_rw^2)
+
+
+The RW2 smoother takes into account primary and secondary neighbors, so 
+there is essentially more incorporation of "surrounding" information. The
+RW2 smoother is defined as:
+ 
+ f(x_t) - 2f(x_{t-1}) + f(x_{t-2})  ~ N(0, sigma_rw^2)
+  
+For a logit link function, you wouldn't expect sigma_rw to be much larger 
+than 2-ish (anything above that is quite large on a logit scale). Hence, the 
+following prior for sigma_rw is a sensible choice:
+
+ P(sigma_rw > 2) = 0.05.
+ 
+ Here, we'll also set our priors for the Matérn correlation for the spatial
+ random field (SRF). We do that for both the "range" and the "sigma" parameters
+ associated with the SRF. You can use the info from earlier, when we created
+ the mesh, to help inform your priors. We said that anything small-scale in this
+ system is around 50km, and set our mesh resolution to 15km, so our prior for range
+ should be a little larger than that.
+ We'll define our PC priors as:
+ 
+  P(Range < 25km) = 0.95, the probability that the range is < 25km is 95%
+  P(sigma > 2) = 0.05, the probability that the sigma is >2 is 5%
+
+----------------------------------------------
+If you fit the model with RW1 and RW2 terms, then most of the time the 
+computation time will be rather excessive. In `mgcv`, this happens because random 
+intercepts are modelled via a smoother function. Here, the issue arises from the 
+large number of unique covariate values - for example, weighted distance to 
+fire has 88 unique values, which isn't huge, but isn't small, either.
+
+When there are many unique covariate values, the model tries to estimate 
+a separate effect for each one, which becomes very slow to compute. To avoid 
+this, we can use the same trick as the `bam()` function with its `discrete` option, 
+by working with a coarser grid of values instead (basically a shortcut). This is 
+where we set the number of knots below.
+
+The code below constructs one-dimensional meshes (sets of equally spaced knots) 
+for the weighted distance to fire. The RW smoothers are defined on these mesh 
+nodes, not directly at every observed covariate value. INLA estimates the latent 
+RW effect at the 20 mesh nodes (the “knots”), with a random walk prior linking 
+the neighboring nodes. For each observation, the `bru_mapper()` object then 
+interpolates between the two nearest knots, so the smoother value at that covariate 
+is a weighted combination of the latent values at the surrounding mesh nodes. 
+In other words, we have only 20 latent RW coefficients per covariate, but we 
+obtain a smooth value for every observation by interpolation. This reduces the 
+dimension of the latent field from “the number of unique covariate values” to 
+20 per covariate, making computation much faster, while still providing a 
+smooth effect across the full covariate range. 
+
+```{r smoothers-and-priors}
+#' Step 1: Setting priors -----
+#' Setting the RW penalized complexity (PC) prior for the RW:
+PC.rw <- list(prec = list(prior = "pc.prec",
+                          param = c(2, 0.05)))
+#' This says we think there is only a 5% chance that the sigma_RW is > 2.
+
+#' Setting the PC priors for range and sigma of the SRF. This uses the mesh 
+#' we made earlier and the `INLA` package.
+Matern <- inla.spde2.pcmatern(mesh1,
+                              prior.range = c(25, 0.95),
+                              prior.sigma = c(2, 0.05))
+
+#' Step 2: Defining the smoothers -----
+#' Defining the one-dimensional mesh for the smoother
+#' The `fm_mesh_1d()` function is from the `fmesher` package, and the `bru_mapper()`
+#' function is from the `inlabru` package.
+mesh.fire <- fm_mesh_1d(seq(min(schisto.complete.sf$weighted_dist_to_fire),
+                             max(schisto.complete.sf$weighted_dist_to_fire),
+                             length.out = 25)) #' where you set your number of knots
+mapper.fire <- bru_mapper(mesh.fire, indexed = FALSE)
+#' setting indexed = FALSE ensures that the mapper uses the actual values, rather
+#' than indexed (smoother) values, to compute the RW interpolation between knots.
+#' Note that the standardized covariates are NOT used in the RW function.
+
+#' Repeat for the other environmental covariates. We can set different knots
+#' for each of these 1d meshes, if we'd like.
+mesh.twi <- fm_mesh_1d(seq(min(schisto.complete.sf$topo_wetness_index),
+                             max(schisto.complete.sf$topo_wetness_index),
+                             length.out = 25)) #' where you set your number of knots
+mapper.twi <- bru_mapper(mesh.twi, indexed = FALSE)
+
+mesh.msi <- fm_mesh_1d(seq(min(schisto.complete.sf$jan_apr_23_msi),
+                             max(schisto.complete.sf$jan_apr_23_msi),
+                             length.out = 25)) #' where you set your number of knots
+mapper.msi <- bru_mapper(mesh.msi, indexed = FALSE)
+
+#' The smoothers for soil and EVI have been deleted, but they can always be
+#' included here again if necessary.
+```
+
+#### Subsection 2.3: Defining model components and the likelihood
+
+We'll first fit the model *without* spatial dependency and use that model as 
+the reference model.
+
+In `inlabru()`, there are always 3 steps before fitting a model:
+ 1. Defining the components - what is going into the model (the "suitcase")
+ 2. Defining the likelihood/model formula
+ 3. Defining output options (decide what numerical output you'd like)
+
+Keep in mind that `inlabru()` treats factors as random effects in the output.
+Also note that when defining components, you can name whatever you'd like *outside*
+the parenthesis for that covariate, but what is *inside* the parentheses has to 
+match the name in the data frame.
+
+We will be fitting the weighted distance to fire with a "Random Walk" function.
+RW order 1 (RW1) penalizes large differences between adjacent values, allowing
+the fitted curve to change direction frequently, producing a more "wiggly" 
+smoother. This is good for environmental covariates that are locally variable.
+RW order 2 (RW2) penalizes large differences in the *slope* between adjacent values
+(i.e., it penalizes changes in the first difference between values), resulting
+in a smoother, more gradually-changing curve, less "wiggly." This is good for
+environmental covariates that change more slowly and continuously.
+
+RW1 is more sensitive to local data sparsity and is prone to overfitting in 
+areas with few observations, and since we have larger areas of KNP without 
+capture locations, we'll opt for a RW2 for our models.
+
+```{r model-components}
+#' Model 1: Bernoulli GAM **without** spatial dependency
+#' You can put anything you think you *might* need or want in your components
+#' list, but you don't have to include them all in your likelihood.
+cmp1 <- ~ Intercept(1) +
+  Age(log.age,
+      model = "linear") +
+  BCS(BCS.Average,
+      model = "linear") +
+  EVI(jan_apr_23_evi.std,
+      model = "linear") +
+  soil(clay_percent_30cm.std,
+       model = "linear") +
+  TWI.rw(topo_wetness_index,
+      model = "rw2",
+      scale.model = TRUE,
+      hyper = PC.rw,
+      mapper = mapper.twi,
+      constr = TRUE) +
+  MSI.rw(jan_apr_23_msi,
+      model = "rw2",
+      scale.model = TRUE,
+      hyper = PC.rw,
+      mapper = mapper.msi,
+      constr = TRUE) +
+  fire.rw(weighted_dist_to_fire,
+          model = "rw2",
+          scale.model = TRUE,
+          hyper = PC.rw,
+          mapper = mapper.fire,
+          constr = TRUE)
+#' Again, note that the standardized version of weighted distance to fire is NOT
+#' used in the smoother, rather the raw data.
+#' If including a factor, you would write that as:
+#' fcap.group(fcapgroup,
+#'            model = "factor_contrast")
+
+#' Model 2: Bernoulli GAM **with** spatial dependency
+#' This is copy-paste from above, just with the SRF added at the end
+#' Note that these same components will be used in Model 3, so no need to re-define
+#' them.
+cmp2 <- ~ Intercept(1) +
+  Age(log.age,
+      model = "linear") +
+  BCS(BCS.Average,
+      model = "linear") +
+  EVI(jan_apr_23_evi.std,
+      model = "linear") +
+  soil(clay_percent_30cm.std,
+       model = "linear") +
+  TWI.rw(topo_wetness_index,
+      model = "rw2",
+      scale.model = TRUE,
+      hyper = PC.rw,
+      mapper = mapper.twi,
+      constr = TRUE) +
+  MSI.rw(jan_apr_23_msi,
+      model = "rw2",
+      scale.model = TRUE,
+      hyper = PC.rw,
+      mapper = mapper.msi,
+      constr = TRUE) +
+  fire.rw(weighted_dist_to_fire,
+          model = "rw2",
+          scale.model = TRUE,
+          hyper = PC.rw,
+          mapper = mapper.fire,
+          constr = TRUE) + 
+  SRF(geometry,
+      model = Matern)
+```
+
+Now we'll define our likelihood, which is the same as specifying the model formula.
+Here you can pick any or all of the components we defined in the previous step.
+Just keep in mind that here you need to use the covariate names that we defined
+above *outside* of the parentheses.
+
+```{r model-likelihood}
+#' Model 1: Bernoulli GAM **without** spatial dependency
+#' Note that the `bru_obs()` command comes from the `inlabru` package
+lik1 <- bru_obs(result01 ~ Intercept + Age + BCS + EVI + soil + TWI.rw + MSI.rw +  
+                  fire.rw, 
+                family = "binomial",
+                data = schisto.complete.sf)
+
+#' Model 2: Bernoulli GAM **with** spatial dependency
+lik2 <- bru_obs(result01 ~ Intercept + Age + BCS + EVI + soil + TWI.rw + MSI.rw + 
+                  fire.rw + SRF,
+                family = "binomial",
+                data = schisto.complete.sf)
+
+#' Model 3: Bernoulli GAM with interactions between SRF and covariates
+#' The first time running this (3.5.26) used soil + SRF, but subsequent run throughs
+#' use Age + SRF
+lik3 <- bru_obs(result01 ~ Intercept + Age + SRF,
+                family = "binomial",
+                data = schisto.complete.sf)
+```
+
+Now quickly define the output options for the models, which will all be the same.
+We would like the 95% credible intervals for the covariates, the DIC, and the WAIC
+for the models. Specifying this here means you won't get all the extra output
+info you don't want.
+
+```{r output-options}
+#' This will be the same across models
+Options <- list(quantiles =  c(0.025, 0.975),
+                control.compute = list(dic = TRUE, waic = TRUE),
+                control.inla = list(strategy = "gaussian")) #' this is where you can specify
+                #'                                            inla's integration strategy
+```
+
+### Section 3: Fitting the Models -----
+
+Here we'll fit the models and visualize initial results, before doing any kind
+of sensitivity analysis.
+
+```{r fitting-model-1}
+#' Model 1: Bernoulli GAM **without** spatial dependency
+
+#' Step 1: Fit the model
+mod1 <- bru(components = cmp1, lik1, options = Options)
+
+#' Step 2: Look at initial results
+mod1$summary.fixed
+mod1$summary.hyperpar
+#' for random effects, you would run the command:
+#' mod1$summary.random$...
+
+#' Step 3: Plot the smoother
+#' First, create a grid of distance to fire values between
+#' the observed min and max values.
+fire.data <- data.frame(weighted_dist_to_fire = seq(from = min(schisto.complete.sf$weighted_dist_to_fire),
+                                        to = max(schisto.complete.sf$weighted_dist_to_fire),
+                                        length = 100))
+
+#' Now, give this data to the `predict()` function to get outputs for the smoother
+pred.fire1 <- predict(mod1, #' tell it which model to use
+                     newdata = fire.data, #' tell it what data to use in its prediction
+                     formula = ~fire.rw, #' tell it what smoother you used
+                     n.samples = 1000) #' tell it how many predictions to generate
+
+#' And plot
+plot_fire1 <- ggplot(data = pred.fire1,
+                    aes(x = weighted_dist_to_fire,
+                        y = mean)) +
+              geom_line() +
+              geom_hline(yintercept = 0, lty = 2) +
+              geom_ribbon(aes(ymax = q0.975,
+                              ymin = q0.025),
+                          alpha = 0.2) +
+  xlab("Weighted Distance to Fire") + ylab("f(Weighted Distance to Fire)") +
+  ggtitle("Model 1") +
+  theme(text = element_text(size = 12))
+plot_fire1
+#' What does this mean biologically?
+#' Remember that the weighted distance takes into account fire recency, more so than
+#' actual distance, and that higher values correspond to more recent fires (and 
+#' close proximity to them).
+#' Consider flipping the x axis?
+#' The RW2 seems to be a bit smoother than the RW1 output
+#' Looks similar in terms of where it doesn't cross 0 to other models.
+
+#' Repeat for the other smoothers
+#' TWI
+twi.data <- data.frame(topo_wetness_index = seq(from = min(schisto.complete.sf$topo_wetness_index),
+                                        to = max(schisto.complete.sf$topo_wetness_index),
+                                        length = 100))
+
+pred.twi1 <- predict(mod1, 
+                     newdata = twi.data, 
+                     formula = ~TWI.rw, 
+                     n.samples = 1000) 
+
+plot_twi1 <- ggplot(data = pred.twi1,
+                    aes(x = topo_wetness_index,
+                        y = mean)) +
+              geom_line() +
+              geom_hline(yintercept = 0, lty = 2) +
+              geom_ribbon(aes(ymax = q0.975,
+                              ymin = q0.025),
+                          alpha = 0.2) +
+  xlab("Topo Wetness Index") + ylab("f(Topo Wetness Index)") +
+  ggtitle("Model 1") +
+  theme(text = element_text(size = 12))
+plot_twi1
+#' Non-linear, but closer to linear than I'd expect. Some areas a bit close to
+#' not overlapping with 0.
+
+#' Repeat for MSI
+msi.data <- data.frame(jan_apr_23_msi = seq(from = min(schisto.complete.sf$jan_apr_23_msi),
+                                        to = max(schisto.complete.sf$jan_apr_23_msi),
+                                        length = 100))
+
+pred.msi1 <- predict(mod1, 
+                     newdata = msi.data, 
+                     formula = ~MSI.rw, 
+                     n.samples = 1000) 
+
+plot_msi1 <- ggplot(data = pred.msi1,
+                    aes(x = jan_apr_23_msi,
+                        y = mean)) +
+              geom_line() +
+              geom_hline(yintercept = 0, lty = 2) +
+              geom_ribbon(aes(ymax = q0.975,
+                              ymin = q0.025),
+                          alpha = 0.2) +
+  xlab("Wet Season MSI") + ylab("f(Wet Season MSI)") +
+  ggtitle("Model 1") +
+  theme(text = element_text(size = 12))
+plot_msi1
+#' Also non-linear, but not super close to avoiding overlap with 0
+```
+
+Now we'll run the same model as above, but with an SRF.
+
+```{r fittint-model-2}
+#' Model 2: Bernoulli GAM **with** spatial dependency
+
+#' Step 1: Fit the model
+mod2 <- bru(components = cmp2, lik2, options = Options)
+
+#' Step 2: Look at initial results
+mod2$summary.fixed
+mod2$summary.hyperpar
+#' for random effects, you would run the command:
+#' mod1$summary.random$...
+
+#' Step 3: Plot the smoother
+#' First, create a grid of distance to fire values between
+#' the observed min and max values.
+fire.data <- data.frame(weighted_dist_to_fire = seq(from = min(schisto.complete.sf$weighted_dist_to_fire),
+                                        to = max(schisto.complete.sf$weighted_dist_to_fire),
+                                        length = 100))
+
+#' Now, give this data to the `predict()` function to get outputs for the smoother
+pred.fire2 <- predict(mod2, #' tell it which model to use
+                     newdata = fire.data, #' tell it what data to use in its prediction
+                     formula = ~fire.rw, #' tell it what smoother you used
+                     n.samples = 1000) #' tell it how many predictions to generate
+
+#' And plot
+plot_fire2 <- ggplot(data = pred.fire2,
+                    aes(x = weighted_dist_to_fire,
+                        y = mean)) +
+              geom_line() +
+              geom_hline(yintercept = 0, lty = 2) +
+              geom_ribbon(aes(ymax = q0.975,
+                              ymin = q0.025),
+                          alpha = 0.2) +
+  xlab("Weighted Distance to Fire") + ylab("f(Weighted Distance to Fire)") +
+  ggtitle("Model 2") +
+  theme(text = element_text(size = 12))
+plot_fire2
+#' Including the SRF reduced the effect of the smoother for weighted distance
+#' to fire, which makes some sense, but it still doesn't cross 0 at lower x-values.
+
+#' Put the two smoother outputs together in one figure for ease
+fire_plots <- plot_grid(plot_fire1, plot_fire2, ncol = 2)
+fire_plots
+
+#' TWI
+twi.data <- data.frame(topo_wetness_index = seq(from = min(schisto.complete.sf$topo_wetness_index),
+                                        to = max(schisto.complete.sf$topo_wetness_index),
+                                        length = 100))
+
+pred.twi2 <- predict(mod2, 
+                     newdata = twi.data, 
+                     formula = ~TWI.rw, 
+                     n.samples = 1000) 
+
+plot_twi2 <- ggplot(data = pred.twi2,
+                    aes(x = topo_wetness_index,
+                        y = mean)) +
+              geom_line() +
+              geom_hline(yintercept = 0, lty = 2) +
+              geom_ribbon(aes(ymax = q0.975,
+                              ymin = q0.025),
+                          alpha = 0.2) +
+  xlab("Topo Wetness Index") + ylab("f(Topo Wetness Index)") +
+  ggtitle("Model 2") +
+  theme(text = element_text(size = 12))
+plot_twi2
+
+twi_plots <- plot_grid(plot_twi1, plot_twi2, ncol = 2)
+twi_plots
+#' Including the SRF changed the relationship at higher x-axis values, but the
+#' line is overall much more flat compared to model 1.
+
+#' Repeat for MSI
+msi.data <- data.frame(jan_apr_23_msi = seq(from = min(schisto.complete.sf$jan_apr_23_msi),
+                                        to = max(schisto.complete.sf$jan_apr_23_msi),
+                                        length = 100))
+
+pred.msi2 <- predict(mod2, 
+                     newdata = msi.data, 
+                     formula = ~MSI.rw, 
+                     n.samples = 1000) 
+
+plot_msi2 <- ggplot(data = pred.msi2,
+                    aes(x = jan_apr_23_msi,
+                        y = mean)) +
+              geom_line() +
+              geom_hline(yintercept = 0, lty = 2) +
+              geom_ribbon(aes(ymax = q0.975,
+                              ymin = q0.025),
+                          alpha = 0.2) +
+  xlab("Wet Season MSI") + ylab("f(Wet Season MSI)") +
+  ggtitle("Model 2") +
+  theme(text = element_text(size = 12))
+plot_msi2
+
+msi_plots <- plot_grid(plot_msi1, plot_msi2, ncol = 2)
+msi_plots
+#' Including the SRF changed the relationship at the extremes of the x-axis, 
+#' but it really flattened the line a lot.
+
+```
+
+And now we'll run model 3: log1p(age) and SRF only
+
+```{r fitting-model-3}
+#' Model 3: Bernoulli GAM with an interaction between SRF and covariates
+
+#' Step 1: Fit the model
+mod3 <- bru(components = cmp2, lik3, options = Options)
+
+#' Step 2: Look at initial results
+mod3$summary.fixed
+mod3$summary.hyperpar
+#' for random effects, you would run the command:
+#' mod1$summary.random$...
+
+#' There is no smoother here to plot, but the range for the SRF increases when 
+#' you take away the other covariates. The sigma stays much the same.
+```
+
+### Section 4: Model Validation -----
+
+Here we'll look at scaled quantile residuals, uniformity in residuals, and check
+spatial dependency for each model.
+
+```{r validation-mod1}
+#' Model 1: Bernoulli GAM **without** spatial dependency
+
+#' Step 1: Get scaled quantile residuals
+#' To do this, we first need to get the fitted values from the model
+N1 <- nrow(schisto.complete.sf)
+schisto.complete.sf$Pi.mod1 <- mod1$summary.fitted.values[1:N1, "mean"]
+
+#' Start a loop simulating 1000 Bernoulli distributed observations for each 
+#' given fitted value, Pi.mod1. We'll use the `rbinom()` function from the `stats`
+#' package.
+Ysim1 <- matrix(nrow = N1, ncol = 1000)
+for (i in 1:1000){
+  Ysim1[,i] <- rbinom(n = N1,
+                      size = 1,
+                      prob = schisto.complete.sf$Pi.mod1)
+}
+
+#' Now pass this simulated data through the `DHARMa` package, which will calculate
+#' scaled quantile residuals for you.
+E1sqr <- createDHARMa(simulatedResponse = Ysim1,
+                      observedResponse = schisto.complete.sf$result01,
+                      fittedPredictedResponse = schisto.complete.sf$Pi.mod1,
+                      integerResponse = TRUE)
+
+#' If you were running a Poisson model, here's where you would check for
+#' overdispersion.
+
+#' Step 2: Check for residual uniformity
+#' The `DHARMa` package will also do this for you!
+par(mfrom = c(1,1), mar = c(5,5,2,2))
+plotQQunif(E1sqr,
+           testUniformity = TRUE,
+           testOutliers = TRUE,
+           testDispersion = FALSE)
+#' Seems ok!
+
+#' Step 3: Plot the residuals vs the covariates using `DHARMa`
+plotResiduals(E1sqr, form = schisto.complete.sf$log.age) #' Ok
+plotResiduals(E1sqr, form = schisto.complete.sf$BCS.Average) #' Ok
+plotResiduals(E1sqr, form = schisto.complete.sf$topo_wetness_index) #' Ok
+plotResiduals(E1sqr, form = schisto.complete.sf$clay_percent_30cm) #' Ok
+plotResiduals(E1sqr, form = schisto.complete.sf$jan_apr_23_evi) #' Ok
+plotResiduals(E1sqr, form = schisto.complete.sf$jan_apr_23_msi) #' Ok
+plotResiduals(E1sqr, form = schisto.complete.sf$weighted_dist_to_fire) #' Ok
+
+#' Step 4: Check for spatial dependency
+#' There are 3 ways we can do this:
+#'  1. Plot residuals vs spatial locations and look for patterns
+#'  2. Apply a Moran's I test on the residuals
+#'  3. Make a variogram of the residuals
+#' We'll do all of these just for fun.
+
+#' Option 1: Plot residuals vs spatial locations
+#' The `residuals()` function comes from the `stats` package.
+schisto.complete.sf$E1 <- residuals(E1sqr)
+
+#' Define the color and point size for the plot
+#' Remember that scaled quantile residuals are centered on 0.5, while Pearson 
+#' residuals are centered around 0.
+schisto.complete.sf$MyCol <- ifelse(schisto.complete.sf$E1 >= 0.5, "red", "blue")
+schisto.complete.sf$MySize <- rescale(abs(schisto.complete.sf$E1), to = c(0,3))
+
+#' Plot it
+mod1residspat <- ggplot(data = kruger.km) +
+  geom_sf(fill = "transparent") +
+  geom_sf(data = schisto.complete.sf,
+          aes(col = MyCol,
+              size = MySize),
+          alpha = 0.3) +
+  scale_color_identity() +
+  scale_size_continuous(range = c(1,3)) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  guides(fill = guide_legend(title = NULL)) +
+  labs(title = "Residuals Mod 1")
+mod1residspat
+
+#' Hmm, maybe a bit of a spatial pattern in the southeast?
+
+#' Option 2: Moran's I test
+#' `DHARMa` will do this for you; however, the function doesn't do well with
+#' observations that have the exact same coordinates, so we'll add a few
+#' cms to each location.
+testSpatialAutocorrelation(E1sqr, 
+                           x = schisto.complete.sf$Xkm + rnorm(N1, mean = 0, sd = 0.0001), 
+                           y = schisto.complete.sf$Ykm + rnorm(N1, mean = 0, sd = 0.0001))
+#' There could be some minor spatial dependency in the residuals.
+
+#' Option 3: Make a variogram
+#' First, make a dataframe with the residuals and capture locations
+mod1data <- data.frame(E1 = schisto.complete.sf$E1,
+                       Xkm = schisto.complete.sf$Xkm,
+                       Ykm = schisto.complete.sf$Ykm)
+
+#' Convert to an `sf` object
+mod1data_sf <- st_as_sf(x = mod1data,
+                        coords = c("Xkm", "Ykm"),
+                        crs = NA) #' CRS doesn't matter for this, so no need to specify
+
+#' Call the `variogram()` function from the package `gstat`
+V1 <- variogram(E1 ~1,
+                data = mod1data_sf,
+                cutoff = 100,
+                cressie = TRUE)
+
+#' And plot
+variogrammod1 <- ggplot(data = V1, aes(x = dist, y = gamma)) +
+                 geom_point() +
+                 geom_smooth(se = FALSE, span = 1) +
+                 labs(x = "Distance (km)", y = "Semi-variogram Mod 1") +
+                 coord_cartesian(ylim = c(0.083, 0.093)) +
+                 theme(text = element_text(size = 15))
+variogrammod1
+#' Peak spatial correlation is up to ~37km; however, it's important to note that
+#' the spatial correlation never falls below 0.86!
+```
+
+Model 1 conclusions: 
+- We may have a slight spatial effect?
+- There is a non-linear effect of weighted distance to fire, TWI, MSI, but perhaps
+mostly just with fire.
+- Interestingly, BCS comes out as close important here in model 2 (positive effect),
+and including just age + SRF flips the age effect from negative to positive 
+(although still not important).
+
+```{r validation-mod2}
+#' Model 2: Bernoulli GAM **with** spatial dependency
+
+#' Step 1: Get scaled quantile residuals
+#' To do this, we first need to get the fitted values from the model
+N2 <- nrow(schisto.complete.sf)
+schisto.complete.sf$Pi.mod2 <- mod2$summary.fitted.values[1:N2, "mean"]
+
+#' Start a loop simulating 1000 Bernoulli distributed observations for each 
+#' given fitted value, Pi.mod1. We'll use the `rbinom()` function from the `stats`
+#' package.
+Ysim2 <- matrix(nrow = N2, ncol = 1000)
+for (i in 1:1000){
+  Ysim2[,i] <- rbinom(n = N2,
+                      size = 1,
+                      prob = schisto.complete.sf$Pi.mod2)
+}
+
+#' Now pass this simulated data through the `DHARMa` package, which will calculate
+#' scaled quantile residuals for you.
+E2sqr <- createDHARMa(simulatedResponse = Ysim2,
+                      observedResponse = schisto.complete.sf$result01,
+                      fittedPredictedResponse = schisto.complete.sf$Pi.mod2,
+                      integerResponse = TRUE)
+
+#' If you were running a Poisson model, here's where you would check for
+#' overdispersion.
+
+#' Step 2: Check for residual uniformity
+#' The `DHARMa` package will also do this for you!
+par(mfrom = c(1,1), mar = c(5,5,2,2))
+plotQQunif(E2sqr,
+           testUniformity = TRUE,
+           testOutliers = TRUE,
+           testDispersion = FALSE)
+#' Seems ok!
+
+#' Step 3: Plot the residuals vs the covariates using `DHARMa`
+plotResiduals(E2sqr, form = schisto.complete.sf$log.age) #' Ok
+plotResiduals(E2sqr, form = schisto.complete.sf$BCS.Average) #' Ok
+plotResiduals(E2sqr, form = schisto.complete.sf$topo_wetness_index) #' Ok
+plotResiduals(E2sqr, form = schisto.complete.sf$clay_percent_30cm) #' Ok
+plotResiduals(E2sqr, form = schisto.complete.sf$jan_apr_23_evi) #' Ok
+plotResiduals(E2sqr, form = schisto.complete.sf$jan_apr_23_msi) #' Ok
+plotResiduals(E2sqr, form = schisto.complete.sf$weighted_dist_to_fire) #' Ok
+
+#' Step 4: Check for spatial dependency
+#' There are 3 ways we can do this:
+#'  1. Plot residuals vs spatial locations and look for patterns
+#'  2. Apply a Moran's I test on the residuals
+#'  3. Make a variogram of the residuals
+#' We'll do all of these just for fun.
+
+#' Option 1: Plot residuals vs spatial locations
+#' The `residuals()` function comes from the `stats` package.
+schisto.complete.sf$E2 <- residuals(E2sqr)
+
+#' Define the color and point size for the plot
+#' Remember that scaled quantile residuals are centered on 0.5, while Pearson 
+#' residuals are centered around 0.
+schisto.complete.sf$MyCol2 <- ifelse(schisto.complete.sf$E2 >= 0.5, "red", "blue")
+schisto.complete.sf$MySize2 <- rescale(abs(schisto.complete.sf$E2), to = c(0,3))
+
+#' Plot it
+mod2residspat <- ggplot(data = kruger.km) +
+  geom_sf(fill = "transparent") +
+  geom_sf(data = schisto.complete.sf,
+          aes(col = MyCol2,
+              size = MySize2),
+          alpha = 0.3) +
+  scale_color_identity() +
+  scale_size_continuous(range = c(1,3)) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  guides(fill = guide_legend(title = NULL)) +
+  labs(title = "Residuals Mod 2")
+mod2residspat
+#' Hmm, maybe resolved some of that spatial pattern in the SE?
+
+#' Option 2: Moran's I test
+#' `DHARMa` will do this for you; however, the function doesn't do well with
+#' observations that have the exact same coordinates, so we'll add a few
+#' cms to each location.
+testSpatialAutocorrelation(E2sqr, 
+                           x = schisto.complete.sf$Xkm + rnorm(N2, mean = 0, sd = 0.0001), 
+                           y = schisto.complete.sf$Ykm + rnorm(N2, mean = 0, sd = 0.0001))
+#' There could be some minor spatial dependency in the residuals?
+
+#' Option 3: Make a variogram
+#' First, make a dataframe with the residuals and capture locations
+mod2data <- data.frame(E2 = schisto.complete.sf$E2,
+                       Xkm = schisto.complete.sf$Xkm,
+                       Ykm = schisto.complete.sf$Ykm)
+
+#' Convert to an `sf` object
+mod2data_sf <- st_as_sf(x = mod2data,
+                        coords = c("Xkm", "Ykm"),
+                        crs = NA) #' CRS doesn't matter for this, so no need to specify
+
+#' Call the `variogram()` function from the package `gstat`
+V2 <- variogram(E2 ~1,
+                data = mod2data_sf,
+                cutoff = 100,
+                cressie = TRUE)
+
+#' And plot
+variogrammod2 <- ggplot(data = V2, aes(x = dist, y = gamma)) +
+                 geom_point() +
+                 geom_smooth(se = FALSE, span = 1) +
+                 labs(x = "Distance (km)", y = "Semi-variogram Mod 2") +
+                 coord_cartesian(ylim = c(0.083, 0.093)) +
+                 theme(text = element_text(size = 15))
+variogrammod2
+#' Now we've maybe done some inverse correlation?
+#' #' It's important to note that nothing drops below spatial correlation of 
+#' ~0.88.
+```
+
+Model 2 conclusions:
+- Including the SRF reduced the effect of the weighted distance to fire smoother
+- Weighted distance to fire still has a non-linear effect
+- Possible non-linear effects of TWI and MSI, but not nearly as strong as weighted
+distance to fire.
+- We may have introduced inverse spatial correlation?
+- Other covariates still include 0 in their CIs
+
+```{r validation-mod3}
+#' Model 3: Bernoulli GLM with SRF and one covariate
+
+#' Step 1: Get scaled quantile residuals
+#' To do this, we first need to get the fitted values from the model
+N3 <- nrow(schisto.complete.sf)
+schisto.complete.sf$Pi.mod3 <- mod3$summary.fitted.values[1:N3, "mean"]
+
+#' Start a loop simulating 1000 Bernoulli distributed observations for each 
+#' given fitted value, Pi.mod1. We'll use the `rbinom()` function from the `stats`
+#' package.
+Ysim3 <- matrix(nrow = N3, ncol = 1000)
+for (i in 1:1000){
+  Ysim3[,i] <- rbinom(n = N3,
+                      size = 1,
+                      prob = schisto.complete.sf$Pi.mod3)
+}
+
+#' Now pass this simulated data through the `DHARMa` package, which will calculate
+#' scaled quantile residuals for you.
+E3sqr <- createDHARMa(simulatedResponse = Ysim3,
+                      observedResponse = schisto.complete.sf$result01,
+                      fittedPredictedResponse = schisto.complete.sf$Pi.mod3,
+                      integerResponse = TRUE)
+
+#' If you were running a Poisson model, here's where you would check for
+#' overdispersion.
+
+#' Step 2: Check for residual uniformity
+#' The `DHARMa` package will also do this for you!
+par(mfrom = c(1,1), mar = c(5,5,2,2))
+plotQQunif(E3sqr,
+           testUniformity = TRUE,
+           testOutliers = TRUE,
+           testDispersion = FALSE)
+#' Seems ok!
+
+#' Step 3: Plot the residuals vs the covariates using `DHARMa`
+plotResiduals(E3sqr, form = schisto.complete.sf$log.age) #' Ok
+
+#' Step 4: Check for spatial dependency
+#' There are 3 ways we can do this:
+#'  1. Plot residuals vs spatial locations and look for patterns
+#'  2. Apply a Moran's I test on the residuals
+#'  3. Make a variogram of the residuals
+#' We'll do all of these just for fun.
+
+#' Option 1: Plot residuals vs spatial locations
+#' The `residuals()` function comes from the `stats` package.
+schisto.complete.sf$E3 <- residuals(E3sqr)
+
+#' Define the color and point size for the plot
+#' Remember that scaled quantile residuals are centered on 0.5, while Pearson 
+#' residuals are centered around 0.
+schisto.complete.sf$MyCol3 <- ifelse(schisto.complete.sf$E3 >= 0.5, "red", "blue")
+schisto.complete.sf$MySize3 <- rescale(abs(schisto.complete.sf$E3), to = c(0,3))
+
+#' Plot it
+mod3residspat <- ggplot(data = kruger.km) +
+  geom_sf(fill = "transparent") +
+  geom_sf(data = schisto.complete.sf,
+          aes(col = MyCol3,
+              size = MySize3),
+          alpha = 0.3) +
+  scale_color_identity() +
+  scale_size_continuous(range = c(1,3)) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  guides(fill = guide_legend(title = NULL)) +
+  labs(title = "Residuals Mod 3")
+mod3residspat
+#' Hmm, not sure - looks really similar to the output of model 2.
+
+#' Option 2: Moran's I test
+#' `DHARMa` will do this for you; however, the function doesn't do well with
+#' observations that have the exact same coordinates, so we'll add a few
+#' cms to each location.
+testSpatialAutocorrelation(E3sqr, 
+                           x = schisto.complete.sf$Xkm + rnorm(N3, mean = 0, sd = 0.0001), 
+                           y = schisto.complete.sf$Ykm + rnorm(N3, mean = 0, sd = 0.0001))
+#' There could be some minor spatial dependency in the residuals?
+
+#' Option 3: Make a variogram
+#' First, make a dataframe with the residuals and capture locations
+mod3data <- data.frame(E3 = schisto.complete.sf$E3,
+                       Xkm = schisto.complete.sf$Xkm,
+                       Ykm = schisto.complete.sf$Ykm)
+
+#' Convert to an `sf` object
+mod3data_sf <- st_as_sf(x = mod3data,
+                        coords = c("Xkm", "Ykm"),
+                        crs = NA) #' CRS doesn't matter for this, so no need to specify
+
+#' Call the `variogram()` function from the package `gstat`
+V3 <- variogram(E3 ~1,
+                data = mod3data_sf,
+                cutoff = 100,
+                cressie = TRUE)
+
+#' And plot
+variogrammod3 <- ggplot(data = V3, aes(x = dist, y = gamma)) +
+  geom_point() +
+  geom_smooth(se = FALSE, span = 1) +
+  labs(x = "Distance (km)", y = "Semi-variogram Mod 3") +
+  coord_cartesian(ylim = c(0.083, 0.093)) +
+  theme(text = element_text(size = 15))
+variogrammod3
+# This looks similar to the output of model 2.
+#' It's important to note that nothing drops below spatial correlation of 
+#' ~0.88.
+```
+
+We'll combine the residual spatial output figures in to one multipanel figure
+for ease of viewing.
+
+```{r combo-validation-figures}
+#' Combo spatial variation in residuals
+spatresid_plots <- plot_grid(mod1residspat, mod2residspat, mod3residspat, ncol = 3)
+spatresid_plots
+
+#' Combo variogram plots
+variogram_combo_plots <- plot_grid(variogrammod1, variogrammod2, variogrammod3, ncol = 3)
+variogram_combo_plots
+```
+
+It seems as though adding in the environmental covariates does at least decrease
+the strength of the negative spatial correlation (mod 2 is an improvement in that
+regard compared to mod 3).
+
+### Section 5: Model Comparison -----
+
+Now we'll compare all 3 models using DIC and WAIC (the Bayesian equivalent of AIC).
+
+```{r model-comparison}
+DICs  <- c(mod1$dic$dic, mod2$dic$dic, mod3$dic$dic)
+WAICs <- c(mod1$waic$waic, mod2$waic$waic, mod3$waic$waic)
+edf.dic  <- c(mod1$dic$p.eff, mod2$dic$p.eff, mod3$dic$p.eff)
+waic.dic <- c(mod1$waic$p.eff, mod2$waic$p.eff, mod3$waic$p.eff)
+
+Out   <- data.frame(Models = c("Bernoulli GAM",
+                               "Bernoulli GAM + SRF",
+                               "Bernoulli GAM + age + SRF"),
+                    DIC = DICs,
+                    edf.dic = edf.dic,
+                    WAIC = WAICs,
+                    waic.dic)
+colnames(Out) <- c(" GAM model", 
+                   "       DIC",
+                   "  ENP.dic",
+                   "      WAIC",
+                   " ENP.waic")
+Out
+```
+
+**From the first runthrough**
+Interestingly, the model with no covariates (apart from the % clay in the soil) 
+has the lowest DIC/WAIC values, but the difference isn't all that much. I think 
+likely the covariates and the SRF are explaining the same thing, so including 
+both in the model isn't that helpful.
+
+**From the second runthrough**
+Increasing mesh resolution and setting better priors decreased the gap between 
+the WAIC/DIC values for models 2 and 3. So technically, although the GAM with
+age + SRF has the lowest WAIC, it isn't all that different from the model with
+the environmental covariates AND the SRF.
+
+**From the third runthrough**
+Modeling the other environmental covariates with a RW smoother really improved
+the model, such that it actually has a *lower* WAIC (although not significantly)
+compared to model 3. This is a change, though, from previous model runs. Model 3
+does have the lowest number of effective parameters still, though.
+It does seem like EVI might have more of a linear relationship, so perhaps it 
+doesn't necessarily need to be modeled as a RW2, or maybe it would be better
+modeled as a RW1?
+
+**From the fourth runthrough**
+Modeling with fire, TWI, and MSI  as RW2 smoothers does have a lower WAIC than
+model 3, but it's still within 5, so there isn't a significant difference.
+Both models 2 and 3 have lower WAICs compared to model 1, but model 2 does have
+the highest number of effective parameters. We still need to check if this
+overfits the model like the third runthrough did, and it still may be more 
+appropriate to model TWI and MSI as linear.
+
+We'll plot the SRFs.
+
+```{r srf-plot}
+#' First, we need to convert the boundaries to an sfc object for plotting. The
+#' sfc object is just the geometry, without any additional attribute data attached.
+#' The inner hull can be used if you only want to plot the SRF for areas that are
+#' closely wrapped to your data.
+InnerHull_sfc <- fm_as_sfc(inner.hull) 
+st_crs(InnerHull_sfc) <- st_crs(schisto.complete.sf) 
+
+#' We'll use the outer hull, so that we have all of KNP covered
+OuterHull_sfc <- st_geometry(outer_sf_simple)
+
+NewData <- fm_pixels(mesh1, 
+                      dims = c(250, 250),
+                      mask = OuterHull_sfc)
+
+#' Plot model 2
+Pred <- predict(object = mod2, 
+                newdata = NewData, 
+                formula = ~ SRF)
+
+#' Some nice colors
+ColSc <- function(...) {
+  scale_fill_gradientn(
+    colours = rev(RColorBrewer::brewer.pal(11, "RdYlBu")),
+    limits = range(..., na.rm = TRUE))}
+
+#' Plot the spatial random field.
+mod2SRF <- ggplot() +
+  gg(Pred, geom = "tile") +
+  geom_sf(data = kruger.km,
+          fill = "transparent", 
+          col = "darkred") +
+  ggtitle("Posterior mean SRF Mod 2") +
+  labs(x = "Easting (km)", y = "Northing (km)") + 
+  ColSc(Pred$mean)
+mod2SRF
+
+#' Plot model 3
+Pred <- predict(object = mod3, 
+                newdata = NewData, 
+                formula = ~ SRF)
+
+#' Some nice colors
+ColSc <- function(...) {
+  scale_fill_gradientn(
+    colours = rev(RColorBrewer::brewer.pal(11, "RdYlBu")),
+    limits = range(..., na.rm = TRUE))}
+
+#' Plot the spatial random field.
+mod3SRF <- ggplot() +
+  gg(Pred, geom = "tile") +
+  geom_sf(data = kruger.km,
+          fill = "transparent", 
+          col = "darkred") +
+  ggtitle("Posterior mean SRF Mod 3") +
+  labs(x = "Easting (km)", y = "Northing (km)") + 
+  ColSc(Pred$mean)
+mod3SRF
+
+#' Combine the plots
+comboSRF <- plot_grid(mod2SRF, mod3SRF, ncol = 2)
+comboSRF
+```
+
+The figure above shows the posterior mean of the spatial random field. Warm 
+colors indicate areas where the spatial field is associated with positive schisto, 
+status, and cool colors indicate areas where it is associated with negative 
+schisto status, after accounting for covariate effects.
+
+It looks like modeling with the other environmental covariates fit with RW2
+smoothers may have overfit the model, and modeling with fire, TWI, and MSI as
+RW2s (EVI and soil as linear), still overfits the model.
+
+### Section 6: Imposed Spatial Dependency -----
+
+Here we can look visually at the posterior distribution of the range and the 
+imposed spatial dependence in the model. These looked similar for models 2 and 3.
+
+We can then define distances where the correlation decays:
+
+  - strong correlation as correlation between 1 - 0.8.
+  - moderate correlation as correlation between 0.8 - 0.5.
+  - weak correlation as correlation between 0.5 - 0.1.
+  - diminishing correlation as correlation smaller than 0.1.
+
+```{r spatial-dependency}
+#' Step 1: Get the posterior distribution of the range
+mod2Range <- spde.posterior(mod2, "SRF", what = "range")
+mod2rangeplot <- plot(mod2Range)
+
+mod3Range <- spde.posterior(mod3, "SRF", what = "range")
+mod3rangeplot <- plot(mod3Range)
+
+comborangeplots <- plot_grid(mod2rangeplot, mod3rangeplot, ncol = 1)
+comborangeplots
+
+#' Step 2: Get the imposed spatial dependence for each model
+#' Model 2
+MaternCor.mod2 <- spde.posterior(mod2, "SRF", what = "matern.correlation")
+pSpatDep.mod2 <- plot(MaternCor.mod2) + labs(x = "Distance (km)", y = "Correlation") +
+            coord_cartesian(ylim = c(0, 1))
+pSpatDep.mod2
+
+#' Model 3
+MaternCor.mod3 <- spde.posterior(mod3, "SRF", what = "matern.correlation")
+pSpatDep.mod3 <- plot(MaternCor.mod3) + labs(x = "Distance (km)", y = "Correlation") +
+            coord_cartesian(ylim = c(0, 1))
+pSpatDep.mod3
+
+#' And add code from the Highland Statistics folks to include the distances at 
+#' which the correlation hits a given level (0.8, 0.5, and 0.1 thresholds).
+gb   <- ggplot_build(pSpatDep.mod2)
+dfB  <- gb$data[[1]][, c("x","y")]
+dfB  <- dfB[order(dfB$x), ]
+dfB2 <- dfB[order(dfB$y), ]  # y ascending, x matched
+
+x_at <- function(level) {
+  approx(x = dfB2$y, y = dfB2$x, xout = level, rule = 2)$y
+}
+
+thr   <- c(0.8, 0.5, 0.1)
+xthr  <- sapply(thr, x_at)
+marks <- data.frame(level = thr, x = xthr)
+
+xmax <- max(dfB$x)
+p.Matern.mod2 <- pSpatDep.mod2 +
+  geom_segment(data = marks, 
+               aes(x = 0, xend = x, y = level, yend = level), 
+               linetype = "dotted") +
+  geom_segment(data = marks, 
+               aes(x = x,  xend = x, y = 0, yend = level), 
+               linetype = "dotted") +
+  geom_point(data = marks, 
+             aes(x = x, y = level), 
+             size = 1.2) +
+  annotate("text", 
+           x = xthr, y = 0, 
+           label = paste0("~", round(xthr, 1)),
+           vjust = 1.4, 
+           size = 3) +
+  annotate("text", 
+           x = 0.97 * xmax, y = 0.90, 
+           hjust = 1, 
+           size = 3.2,
+           label = "Strong: 1–0.8") +
+  annotate("text", 
+           x = 0.97 * xmax, 
+           y = 0.65, 
+           hjust = 1, 
+           size = 3.2,
+           label = "Moderate: 0.8–0.5") +
+  annotate("text", 
+           x = 0.97 * xmax, 
+           y = 0.30, 
+           hjust = 1, 
+           size = 3.2,
+           label = "Weak: 0.5–0.1") +
+  annotate("text", 
+           x = 0.97 * xmax, 
+           y = 0.06, 
+           hjust = 1, 
+           size = 3.2,
+           label = "Diminishing: < 0.1") +
+  theme_minimal() +
+  ggtitle("Mod 2 Spatial Dependence") +
+  theme(text = element_text(size = 15)) 
+p.Matern.mod2
+
+#' Repeat for mod 3
+gb   <- ggplot_build(pSpatDep.mod3)
+dfB  <- gb$data[[1]][, c("x","y")]
+dfB  <- dfB[order(dfB$x), ]
+dfB2 <- dfB[order(dfB$y), ]  # y ascending, x matched
+
+x_at <- function(level) {
+  approx(x = dfB2$y, y = dfB2$x, xout = level, rule = 2)$y
+}
+
+thr   <- c(0.8, 0.5, 0.1)
+xthr  <- sapply(thr, x_at)
+marks <- data.frame(level = thr, x = xthr)
+
+xmax <- max(dfB$x)
+p.Matern.mod3 <- pSpatDep.mod3 +
+  geom_segment(data = marks, 
+               aes(x = 0, xend = x, y = level, yend = level), 
+               linetype = "dotted") +
+  geom_segment(data = marks, 
+               aes(x = x,  xend = x, y = 0, yend = level), 
+               linetype = "dotted") +
+  geom_point(data = marks, 
+             aes(x = x, y = level), 
+             size = 1.2) +
+  annotate("text", 
+           x = xthr, y = 0, 
+           label = paste0("~", round(xthr, 1)),
+           vjust = 1.4, 
+           size = 3) +
+  annotate("text", 
+           x = 0.97 * xmax, y = 0.90, 
+           hjust = 1, 
+           size = 3.2,
+           label = "Strong: 1–0.8") +
+  annotate("text", 
+           x = 0.97 * xmax, 
+           y = 0.65, 
+           hjust = 1, 
+           size = 3.2,
+           label = "Moderate: 0.8–0.5") +
+  annotate("text", 
+           x = 0.97 * xmax, 
+           y = 0.30, 
+           hjust = 1, 
+           size = 3.2,
+           label = "Weak: 0.5–0.1") +
+  annotate("text", 
+           x = 0.97 * xmax, 
+           y = 0.06, 
+           hjust = 1, 
+           size = 3.2,
+           label = "Diminishing: < 0.1") +
+  theme_minimal() +
+  ggtitle("Mod 3 Spatial Dependence") +
+  theme(text = element_text(size = 15)) 
+p.Matern.mod3
+
+#' Combine the two plots
+combo_spatdepplots <- plot_grid(p.Matern.mod2, p.Matern.mod3, ncol = 1)
+combo_spatdepplots
+```
+
+**First runthrough**
+This plot tells us that the spatial correlation drops below 0.8 at ~27.8km, below
+0.5 at ~62.4km, and below 0.1 at ~159.5km.
+
+**Second runthrough**
+This plot tells us that the spatial correlation drops below 0.8 at ~13km, below
+0.5 at ~29km, and below 0.1 at ~74.3km - a pretty big difference compared to the
+output from the first runthrough with a coarser mesh.
+
+**Third runthrough**
+Including the other env covariates as smoothers overfit our model. The spatial
+correlation drops below 0.8 at <1km.
+
+**Fourth runthrough**
+Including fire, TWI, and MSI as smoothers still leaves us with an overfit model.
+The spatial correlation drops below 0.8 at <1km still.
+
+### Overall Conclusions -----
+
+**Last updated 3.17.26**
+
+We should do a sensitivity analysis and see whether we can improve the MeshResolution,
+prior of the range, and prior of the sigma_u.
+  - Try mesh resolution of 10km?
+  - Update the prior to reflect what we know about the range.
+  - Extract the sigma we got here and use that to inform what the prior should
+  be for sigma_u.
+  - Only fire should be included as a smoother. Including other covariates as
+  smoothers just overfits our model.
+
+We will also be building a model to look at **schisto burden**, not just disease
+status (pos/neg). We can see if any of these environmental covariates are important
+for explaining burden on the landscape.

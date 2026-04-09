@@ -5,9 +5,9 @@ date: "`r Sys.Date()`"
 output: pdf_document
 ---
 
-This document is an attempt to test a less-complex INLA-SPDE model of *Schistosoma* spp. burden (represented via CAA titer) to generate a predictive heat map of burden in African buffalo (*Syncerus caffer*) in Kruger National Park, based off of the code found in the `anaplasma_INLA.Rmd`, `anaplasma_INLA_henri.Rmd`, and `limited_INLA.Rmd` files. 
+This document is an attempt to test a less-complex INLA-SPDE model of *Schistosoma* spp. burden (represented via CAA titer) to generate a predictive heat map of burden in African buffalo (*Syncerus caffer*) in Kruger National Park, based off of the code found in the `anaplasma_INLA.Rmd`, `anaplasma_INLA_henri.Rmd`, and `limited_INLA.Rmd` files.
 
-Here, we'll try to run the INLA model using buffalo schisto CAA titer as the response variable, with demographic factors, Animal ID, management section, and a single environmental variable (likely elevation) as covariates. When working with CAA titers, animals with values < 30 (i.e., negative values) must be removed for analysis. These values also tend to follow a negative binomial distribution, which means the model family can be either negative binomial or gamma. For this initial analysis, we will log transform CAA titer and add 1 to all values (since you can't log transform 0).
+Here, we'll try to run the INLA model using buffalo schisto CAA titer as the response variable, with demographic factors, Animal ID, management section, and a single environmental variable (likely elevation) as covariates. When working with CAA titers, animals with values \< 30 (i.e., negative values) must be removed for analysis. These values also tend to follow a negative binomial distribution, which means the model family can be either negative binomial or gamma. For this initial analysis, we will log transform CAA titer and add 1 to all values (since you can't log transform 0).
 
 ### General INLA Setup, Packages, Setting wd, etc.
 
@@ -127,7 +127,7 @@ These are lines Henri wrote to make sure the github has the necessary directory 
 #if(!file.exists(file.path(file_path, "inla.model", "dic", "dic_fieldplots"))) dir.create(file.path(file_path, "inla.model", "dic", "dic_fieldplots"))
 ```
 
-These are scripts for doing various things that Henri wrote or adapted. Some are called later, especially for plotting the spatial fields. They can be run in the background with "background jobs > script > run with a copy of global environment > copy to global environment."
+These are scripts for doing various things that Henri wrote or adapted, as well as some scripts for merging raster data that I created. Some are called later, especially for plotting the spatial fields. They can be run in the background with "background jobs \> script \> run with a copy of global environment \> copy to global environment."
 
 ```{r custom-scripts}
 # load scripts - use full file path since scrips are in a different directory
@@ -140,27 +140,31 @@ source("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/Anaplasma
 source("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/Anaplasma/gitlab/anaplasma_inla/scripts/rfunction_busywork.R")
 source("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/Anaplasma/gitlab/anaplasma_inla/scripts/rfunction_inla_my_extract_projection_values.R")
 source("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/Anaplasma/gitlab/anaplasma_inla/scripts/rfunction_latex_subfiguregenerator.R")
+source("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/KNP Environmental Data/my_raster_load_function.R")
 ```
 
 Loading in the schisto data, combining with capture locations and environmental layer(s):
 
 ```{r loading-data, echo=FALSE}
-# Load the master data frame
+## Loading the master data frame
 base_schisto_df<- read.csv("schisto_bym_data.csv")
 # Note: there are 217 observations that are MISSING CAA data - these were below LLOD in the raw data
 
-raster_data <- st_read("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/Anaplasma/gitlab/anaplasma_inla/data/anaplasma_data_with_env_layers_coarsest.gpkg", layer = "cap_with_env")
+## Loading environmental data
+env_covars <- st_read("env_covar_data_LSTresolution.gpkg")
 
-# Merging the schisto data with the capture locations and environmental variables
+# Call the safe raster load function to make sure rasters are loaded in cleanly if including new ones, especially when they have duplicate names contained within them (common for EVI/NDVI)
+
+# fall.23.EVI <- safe_raster_load_function("/Users/eberleyarborough/Documents/2023 Buffalo XS Disease Data/KNP Environmental Data/Cleaned Rasters/EVI_MarApr2023_Marginal_Mean.tif", prefix = "evifall23")
+# fall.23.EVI <- project(fall.23.EVI, "EPSG:32736")
+
+# Optional: At this point, open the custom `my_raster_merge_function` code if wanting to align new rasters to existing ones in use
+# As of 2/19, all are aligned to the coarsest layer of LST day, but if LST is removed from analysis, would need to realign to the new coarsest layer
+
+## Merging the schisto data with the capture locations and environmental variables
 # Note: All `raster_data` is on the left of the merge to preserve the spatial data when the files are merged
-schisto_spatial_df <- raster_data %>%
+schisto_spatial_df <- env_covars %>%
   rename(animal.ID = Animal.ID) %>% # making sure the column headers match for merging 
-  select(animal.ID,                 # selecting only columns of interest
-         fall.2023.NDVI, 
-         spring.2022.NDVI, 
-         elevation, 
-         fall.2023.LST.day.mean, 
-         fall.2023.LST.night.mean) %>% 
   
   # Now adding the rest of the data
   left_join(base_schisto_df, by = "animal.ID") %>%
@@ -168,8 +172,9 @@ schisto_spatial_df <- raster_data %>%
     animal.ID,                                         # Reordering the variables - ID first
     age.years, age.class, Sex, BCS.Average, Section,   # Then demographics
     CAA.Estimate,                                      # Disease variable (response)
-    fall.2023.NDVI, spring.2022.NDVI, elevation,       # Environmental data
-    fall.2023.LST.day.mean, fall.2023.LST.night.mean,  
+    fall.2023.NDVI, spring.2022.NDVI, fall.23.EVI, spring.22.EVI, # Environmental data
+    elevation, fall.2023.LST.day.mean, fall.2023.LST.night.mean,
+    primary_soil_type, primary_soil_descr, soil_category,
     everything()                                       # Catching anything else I may have missed (geom automatically goes last)
   ) %>%
   
@@ -183,7 +188,6 @@ schisto_spatial_df <- raster_data %>%
 schisto_spatial_df$age.class <- gsub(" ", "", schisto_spatial_df$age.class)
 
 #### NOTE!!! See env_covars_collinearity plot to look at correlation between mean LST day/night, elev, and fall/spring NDVI
-#### Also - only mean night LST looks to be normally distributed, the others do not - is it appropriate to transform them?
 
 # Note: not writing to a df at the moment so variables can be changed out later with ease
 
@@ -236,46 +240,47 @@ cat("bdry.utm$loc Y range:", range(bdry.utm$loc[,2]), "\n")
 
 ```
 
-Simple data visualization:
+Simple data visualization and transformation:
 
-This section **should** be updated if/when covariates change!
+Visualization code is currently commented out (as of 2/17), but this section **should** be updated if/when covariates change! For now, run this chunk for the transformations only.
 
-```{r data-visualization}
+Last updated 2/19 with EVI values and standardized (not logit transformed) NDVI and EVI values.
+
+```{r data-visualization-transformation}
 # ----- STEP 1: ----- Load custom visualization functions from the Highland Statistics script
 source("~/Documents/Coding Help/INLA tutorials/highland_stats_INLA_course/AllRCodeInlabru/HighstatLibV14.R")
 
 # ----- STEP 2: ----- Make a series of histograms of the covariates
 # First, convert data from wide to long format
-df_long <- positive_only_schisto_df %>%
-  pivot_longer(cols = c(age.years, BCS.Average, elevation, fall.2023.NDVI, spring.2022.NDVI, fall.2023.LST.day.mean, fall.2023.LST.night.mean), 
-               names_to = "variable",
-               values_to = "value")
+#df_long <- positive_only_schisto_df %>%
+  #pivot_longer(cols = c(age.years, BCS.Average, elevation, fall.2023.NDVI, spring.2022.NDVI, fall.2023.LST.day.mean, fall.2023.LST.night.mean, fall.23.EVI, spring.22.EVI), 
+               #names_to = "variable",
+               #values_to = "value")
 
 # Create multi-panel histogram
-cov_his <- ggplot(df_long, aes(x = value)) +
-            geom_histogram(bins = 30, fill = "steelblue", color = "black") +
-            facet_wrap(~ variable, scales = "free") +  # scales = "free" allows different x/y axes
-            theme_minimal() +
-            labs(title = "Distribution of Covariates",
-                 x = "Value",
-                 y = "Frequency")
-cov_his
+#cov_his <- ggplot(df_long, aes(x = value)) +
+            #geom_histogram(bins = 30, fill = "steelblue", color = "black") +
+            #facet_wrap(~ variable, scales = "free") +  # scales = "free" allows different x/y axes
+            #theme_minimal() +
+            #labs(title = "Distribution of Covariates",
+                 #x = "Value",
+                 #y = "Frequency")
+#cov_his
 
 # Age is right-skewed and should be log-transformed
-# NDVI is bounded between 0 and 1, so should be logit transformed
+# NDVI is generally bounded between 0 and 1 (although not always), so could be logit transformed or standardized
 # Elevation and LST (day/night) should be standardized using the `scale()` function.
-# Can consider scaling NDVI - either the raw data or the logit-transformed data
 
 # ----- STEP 3: ----- Look for collinearity
 # Making a list of covariates to plot - start with demographics
-demo_var_to_plot <- c("age.years", "BCS.Average") # can't use sex since is a categorical variable
+#demo_var_to_plot <- c("age.years", "BCS.Average") # can't use sex since is a categorical variable
 
 # Making a list of environmental covariate to plot
-env_var_to_plot <- c("fall.2023.LST.day.mean", "fall.2023.LST.night.mean", "elevation", "fall.2023.NDVI", "spring.2022.NDVI")
+#env_var_to_plot <- c("fall.2023.LST.day.mean", "fall.2023.LST.night.mean", "elevation", "fall.2023.NDVI", "spring.2022.NDVI", "fall.23.EVI", "spring.22.EVI")
 
 # Using the `Mypairs` function from Highland Statistics
-age_vs_bcs <- Mypairs(positive_only_schisto_df[,demo_var_to_plot])
-env_covars_vs <- Mypairs(positive_only_schisto_df[,env_var_to_plot])
+#age_vs_bcs <- Mypairs(positive_only_schisto_df[,demo_var_to_plot])
+#env_covars_vs <- Mypairs(positive_only_schisto_df[,env_var_to_plot])
 
 # No issues between age and BCS
 # Possible issues with environmental covariates - LST day and fall NDVI have a correlation coefficient of 0.77
@@ -291,16 +296,19 @@ library(boot)
 positive_only_schisto_df$fall.23.NDVI.logit <- logit(positive_only_schisto_df$fall.2023.NDVI)
 positive_only_schisto_df$spring.22.NDVI.logit <- logit(positive_only_schisto_df$spring.2022.NDVI)
 
-# Note: The histograms of both stil show a left skew (fall '23) and a bimodal distribution (spring '22)
+# Note: The histograms of both still show a left skew (fall '23) and a bimodal distribution (spring '22)
 
-# Standardizing elevation and day/night 2023 mean LST - using z-scores
+# Standardizing environmental covariates
 # the [,1] after the `scale()` function makes R return a vector instead of a matrix (R typically returns a matrix)
 positive_only_schisto_df$elevation.std <- scale(positive_only_schisto_df$elevation)[,1]
 positive_only_schisto_df$LST.day.std <- scale(positive_only_schisto_df$fall.2023.LST.day.mean)[,1]
 positive_only_schisto_df$LST.night.std <- scale(positive_only_schisto_df$fall.2023.LST.night.mean)[,1]
+positive_only_schisto_df$fall.23.NDVI.std <- scale(positive_only_schisto_df$fall.2023.NDVI)[,1]
+positive_only_schisto_df$spring.22.NDVI.std <- scale(positive_only_schisto_df$spring.2022.NDVI)[,1]
+positive_only_schisto_df$fall.23.EVI.std <- scale(positive_only_schisto_df$fall.23.EVI)[,1]
+positive_only_schisto_df$spring.22.EVI.std <- scale(positive_only_schisto_df$spring.22.EVI)[,1]
 
 ```
-
 
 ### Setting INLA values - priors, mesh values, etc.
 
@@ -325,7 +333,7 @@ spdePriorFlat_set = FALSE # False = use spde priors or PC (penalized complexity)
 
 # **Range Prior**: How far does spatial correlation extend?
 # Can use the mod3 INLA range output figure to help decide what a reasonable range might be, too
-spdepriorrange_set = c(12500, 0.5) # Context that may inform this prior: buffalo home ranges, river systems, local habitat similarities
+spdepriorrange_set = c(7500, 0.5) # Context that may inform this prior: buffalo home ranges, river systems, local habitat similarities
 
 # **Sigma Prior**: How much does the spatial field vary?
 # on the scale of the response variable (so consider log-transformed resp vars)
@@ -512,18 +520,6 @@ my_mesh_function <- function(DT = NULL,          # Data frame with observations
 ### END FUNCTION ###
 ```
 
-Here is a code chunk aiming to use INLA's `meshbuilder()` function to see how changes in priors, edges, and cutoff values affect the mesh, and what might fit best with this data. This function opens a `Shiny()` app, creating a new window in which you can work interactively to change the mesh, without writing any code. After you're happy with the mesh, you can copy the code over into the body of the .Rmd file.
-
-```{r mesh-builder}
-library(shiny)
-
-#extracting buffalo locations
-mesh.loc <- my_location_function(DT = dt.sub, LOCUTM = TRUE)
-
-# Launch meshbuilder  - it opens the new window that lets you select your spatial elements individually
-meshbuilder()
-```
-
 \begin{itemize}
   \item \textbf{SPDE Function:} a function that creates a Stochastic Partial Differential Equation (SPDE) model, which defines how the spatial field varies across the study area (KNP)
   \item Specifies the spatial correlation structure with a Matérn covariance (aka continuous "spatial glue," describes how the correlation between 2 points decays as the distance between them increases) can be expressed as a \textit{solution} to an spde
@@ -569,6 +565,7 @@ my_spde_function <- function(Mesh, spdePriorFlat = TRUE,
 ```
 
 **Understanding the Parameters**
+
 \begin{itemize}
   \item Spatial range (p): this defines the distance at which the spatial correlation becomes weak
   \begin{itemize}
@@ -594,7 +591,6 @@ my_spde_function <- function(Mesh, spdePriorFlat = TRUE,
     \item Aka, "We think the spatial variability is moderate (<1) because we only think there is a 10% chance it's very large"
   \end{itemize}
 \end{itemize}
-
 \begin{itemize}
   \item \textbf{Model Matrix Function:} a function to make the model matrix that converts all integers and factors to characters, creates a scaffolding for a matrix without an intercept, drops the first column (becomes the reference) to avoid multicollinearity - creating dummy variables for the other categories associated with that covariate - and produces a data frame ready to be used for modeling later on (used in the `inla.stack()` command), typically as a "1" in the A list of `inla.stack`
   \item This is similar to MLR, in which the model matrix `X` maps the coefficients directly to the observations since those covariates are measured at the exact same locations as the response variable
@@ -624,7 +620,8 @@ X
 }
 
 # Testing the output to make sure no covariates are dropped
-#X_test <- my_modelmatrix_function(DT = positive_only_schisto_df, Covar = covar_mod1)
+#X_test <- my_modelmatrix_function(DT = positive_only_schisto_df, Covar = covar_mod2)
+#colnames(X_test)
 
 ### END ###
 ```
@@ -836,7 +833,7 @@ my_stack_function <- function(
 
 ### Defining model variables:
 
-This next code chunk serves to define all variables and some settings for the INLA models, making them easy to modify in one code chunk later on. 
+This next code chunk serves to define all variables and some settings for the INLA models, making them easy to modify in one code chunk later on.
 
 At this point (1.30), we're trying to use the positive CAA values only and 2 environmental variables (elevation and fall 2023 NDVI).
 
@@ -852,18 +849,26 @@ covar_mod1 <- c("log.age",       # Log1p transformed age (years)
                 "BCS.Average")   # Continuous, body condition score
 
 covar_mod2 <- c("log.age",
-                "Sex",
+                #"Sex",
                 "BCS.Average",
                 "elevation.std",               # Continuous, scaled elevation (m)
-                "fall.23.NDVI.logit",      # Continuous, logit transformed
-                "LST.day.std")  # Continuous, scaled mean daytime LST (C)
+                #"fall.23.NDVI.std",      # Continuous, logit transformed
+                #"spring.22.NDVI.std",    # Continuous, logit transformed
+                #"LST.day.std",  # Continuous, scaled mean daytime LST (C)
+                "fall.23.EVI.std",
+                "spring.22.EVI.std")
+                #"soil_category") # Broad categories (4) from the 12 more specific ones
 
-covar_mod3 <- c("log.age",       # Same as mod2 but re-written for consistency
-                "Sex",
+covar_mod3 <- c("log.age",             # Same as mod2 but re-written for consistency
+                #"Sex",
                 "BCS.Average",
-                "elevation.std",       
-                "fall.23.NDVI.logit",
-                "LST.day.std")
+                "elevation.std",               
+                #"fall.23.NDVI.std",     
+                #"spring.22.NDVI.std",    
+                #"LST.day.std", 
+                "fall.23.EVI.std",
+                "spring.22.EVI.std")
+                #"soil_category")
            
 # ===== DATA TRANSFORMATION =====
 # Create log-transformed response variable for modeling
@@ -895,13 +900,11 @@ resp.family <- c("Gaussian")    # For log_CAA, assumes normally distributed resi
 # Environmental/landscape-level variables
 environmental.vars <- c(
   "elevation.std",
-  "fall.23.NDVI.logit",               # Vegetation greenness just prior to capture
-  "LST.day.std"                     # Daytime land surface temp
+  "fall.23.NDVI.std",               # Vegetation greenness just prior to capture
+  #"LST.day.std",                     # Daytime land surface temp
   #"LST.night.std",                  # Nighttime land surface temp
-  #"land.cover2018",                    # Land cover type
-  # "mean.surface.water",            # Water availability (should use a different layer though)
-  #"spring.22.NDVI.logit"               # Vegetation greenness the spring prior to capture 
-  )
+  "spring.22.NDVI.std",               # Vegetation greenness the spring prior to capture 
+  "soil_category")
   
 # Individual-level demographic variables
 demographic.vars <- c(
@@ -951,13 +954,11 @@ pallete_list <- c("Blues", "BuGn", "BuPu", "GnBu", "Greens", "Greys", "Oranges",
 
 The general purpose of this chunk is to define some reusable formula building blocks for different model complexities. These strings are combined with covariate names to create complete INLA formulas. The overall structure is as follows: set[model#].[suffix] where the suffix indicates formula variant for that level of model (gaussian vs non-gaussian). The only big difference between the gaussian and non-gaussian models is how the priors and hyperparameters/hyperpriors are coded, which for now (1.30) is the same, because we have no random effects at this point in time.
 
-The complete formula is built as: 
+The complete formula is built as:
 
-set#.left (formula header) + fixed_# (fixed effects for that model set) +/- random effect, either .a for gaussian or .b for non-gaussian models
-Example: "set1.left " + "fixed_1"
-Results in: y ~ -1 + Intercept + age + sex + BCS
+set#.left (formula header) + fixed\_# (fixed effects for that model set) +/- random effect, either .a for gaussian or .b for non-gaussian models Example: "set1.left " + "fixed_1" Results in: y \~ -1 + Intercept + age + sex + BCS
 
-The "-1 + Intercept" removes R's automatic intercept, and "+ Intercept" adds it back explicitly as a named variable in the stack. This gives us control over intercept priors and ensures correct INLA stack structure. 
+The "-1 + Intercept" removes R's automatic intercept, and "+ Intercept" adds it back explicitly as a named variable in the stack. This gives us control over intercept priors and ensures correct INLA stack structure.
 
 At present (1.30), these model sets are provided in increasing order of complexity from 1 - 3: set 1 includes demographics ONLY, set 2 includes demographics, environmental variables, and a random effect of management section, and set 3 includes the effects from sets 1 & 2, with a spatial component. These should be updated if any changes to effects occur, as well.
 
@@ -999,7 +1000,7 @@ set2.b <- paste0(" +  f(section.num, model = 'iid')")
 
 # COMPLETE MODEL 2 FORMULA (Gaussian):
 # form.left: y ~ -1 + Intercept + 
-# colnames of Xsub.filter: SexFemale + SexMale + age.years + BCS.Average + elevation + ENV VARS + 
+# colnames of Xsub.filter: SexFemale + SexMale + age.years + BCS.Average + ENV VARS + 
 # set2.a:   f(section.num, model='iid')
 
 # ===== MODEL SET 3: SPATIAL EFFECTS =====
@@ -1033,7 +1034,7 @@ set3.b <- paste0(" +  f(spatial.field, model = spde)")
 
 This is a fixed-effects model to understand the effects of host demographics on Schisto burden, given by:
 
-y ~ -1 + Intercept + SexFemale + SexMale + age.years + BCS.Average, where y = log1p(CAA)
+y \~ -1 + Intercept + SexFemale + SexMale + age.years + BCS.Average, where y = log1p(CAA)
 
 ```{r model-1, cache=TRUE, warning=FALSE}
 # ===== INITIALIZE STORAGE LISTS =====
@@ -1229,9 +1230,10 @@ mod1.list.extract <-
 print(mod1.list.extract)
 
 # Save extracted summaries for later use
-save(mod1.list.extract, file = file.path(file_path, "inla.model","mod1.list.extract.R"))
-# To reload later: load(file = file.path(file_path, "inla.model","mod1.list.extract.R"))
+save(mod1.list.extract, file = file.path(file_path, "inla.model","mod1.list.extract.rds"))
+# To reload later: load(file = file.path(file_path, "inla.model","mod1.list.extract.rds"))
 
+rm(mod1.stack.list, mod1.mesh.list, mod1.spde.list); gc()
 
 # ----- Model Selection -----
 # Compare different covariate combinations (if desired)
@@ -1259,7 +1261,7 @@ fixed_effects_mod1$variable <- rownames(fixed_effects_mod1)
 # Create pretty labels for variables
 variable_labels <- data.frame(
   variable = c("Intercept", "log.age", "SexFemale", "SexMale", "BCS.Average"),
-  label = c("Intercept", "Log Age (years)", "Sex: Female", "Sex: Male", "Body Condition Score")
+  label = c("Intercept", "Age (log years)", "Sex: Female", "Sex: Male", "Avg. Body Condition Score")
   )
 
 # Join labels to fixed effects
@@ -1277,9 +1279,9 @@ caterpillar_plot_mod1 <- ggplot(fixed_effects_mod1, aes(x = mean, y = reorder(di
   geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
   # Labels
   labs(
-    title = "Host Demographic Effects on Schisto Titer",
-    x = "Effect Size (95% Credible Interval)",
-    y = "Demographic Covariates"
+    title = "Model 1: Host Demographic Effects on Schisto Burden",
+    x = "95% Credible Interval",
+    y = NULL
   ) +
   theme_classic() +
   theme(
@@ -1301,7 +1303,7 @@ ggsave(file.path(file_path, "figures",
 
 This model is a mixed-effects model, including host demographics and environmental variables as fixed effects, and management section as a random effect. The model equation is given by:
 
-y ~ -1 + Intercept + SexFemale + SexMale + age.years + BCS.Average + elevation + fall.2023.NDVI + f(section.num, model='iid')
+y \~ -1 + Intercept + SexFemale + SexMale + age.years + BCS.Average + elevation + fall.2023.NDVI + fall.2023.mean.LST.day + soil_category + f(section.num, model='iid')
 
 ```{r model-2, cache=TRUE, warning=FALSE}
 # ===== INITIALIZE STORAGE LISTS =====
@@ -1355,7 +1357,7 @@ for(x in 1:length(resp)){
                              DT = dt.sub, 
                              Mod.Matrix = Xsub,
                              GroupVar = NULL,
-                             include_section = TRUE,                # Adding section as a random effect
+                             include_section = FALSE,                # Adding section as a random effect
                              include_spatial = FALSE,               # Still no spatial component
                              spdePriorFlat = spdePriorFlat_set,
                              spdepriorrange = spdepriorrange_set,
@@ -1398,13 +1400,13 @@ for(x in 1:length(resp)){
   # Formula now includes f(section.num, model='iid')
   # form.left, set2.a, set2.b defined in the model formula code chunk
   if(resp.family[x] == "gaussian"){
-    modform <- as.formula(paste0(form.left, paste0(colnames(Xsub.filter), collapse = " + "), set2.a))    
+    modform <- as.formula(paste0(form.left, paste0(colnames(Xsub.filter), collapse = " + ")))  # currently have the random effect taken out
   } 
   # Results in something like:
   # y ~ -1 + Intercept + SexFemale + SexMale + age.years + BCS.Average + elevation +
   #     f(section.num, model='iid') - Section random effect
   else {
-  modform <- as.formula(paste0(form.left, paste0(colnames(Xsub.filter), collapse = " + "), set2.b))  
+  modform <- as.formula(paste0(form.left, paste0(colnames(Xsub.filter), collapse = " + ")))  # random effect taken out
   }
   cat("✓ Formula:", as.character(modform)[2], "\n")
   
@@ -1471,8 +1473,7 @@ print("Completed model loop, now saving objects")
 
 # ----- Clean Up Memory -----
 # Remove large objects no longer needed (keep mod2.list for analysis)
-#rm(mod2.stack.list, mod2.mesh.list, mod2.spde.list)
-#gc()
+rm(mod2.stack.list, mod2.mesh.list, mod2.spde.list); gc()
 
 cat("Completed saving objects now extracting model results...\n")
 
@@ -1495,7 +1496,7 @@ if(length(which(is.na(mod2.dic.list))) > 0){
 
 mod2.dic.list <- do.call(rbind, mod2.dic.list)
 # Optional: Save DIC
-#write.csv(mod2.dic.list, file.path(file_path, "inla.model", "dic", "mod2_dic.csv"))
+write.csv(mod2.dic.list, file.path(file_path, "inla.model", "dic", "mod2_dic.csv"))
 
 # ----- Extract Model Summaries -----
 mod2.list.extract <-
@@ -1509,8 +1510,8 @@ mod2.list.extract <-
 texreg::screenreg(mod2.list.extract)
 
 # Save extracted summaries
-#save(mod2.list.extract, file = file.path(file_path, "inla.model","mod2.list.extract.R"))
-# To reload: load(file = file.path(file_path, "inla.model","mod2.list.extract.R"))
+#save(mod2.list.extract, file = file.path(file_path, "inla.model","mod2.list.extract.rds"))
+# To reload: load(file = file.path(file_path, "inla.model","mod2.list.extract.rds"))
 
 # ===== VISUALIZATION: =====
 # See the model 2 code for Henri's code making nice tables for his dissertation!
@@ -1520,22 +1521,22 @@ texreg::screenreg(mod2.list.extract)
 # Helps identify which sections have higher/lower disease burden
 
 # Extract section random effects from the last model run
-section_effects <- mod.run$summary.random$section.num
+#section_effects <- mod.run$summary.random$section.num
 
 # Create the caterpillar plot 
-section_effect_plot <- ggplot(section_effects, aes(x = mean, y = reorder(ID, mean))) +
-  geom_point(size = 3) +  # Point estimate
-  geom_errorbarh(aes(xmin = `0.025quant`, xmax = `0.975quant`), 
-                 height = 0.2) +  # 95% credible intervals
-  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +  # Reference line
-  labs(
-    x = "Section Effect (log scale)",
-    y = "KNP Management Section",
-    title = "Random Effects by Park Section",
-    subtitle = "95% Credible Intervals"
-  ) +
-  theme_minimal()
-section_effect_plot
+#section_effect_plot <- ggplot(section_effects, aes(x = mean, y = reorder(ID, mean))) +
+  #geom_point(size = 3) +  # Point estimate
+  #geom_errorbarh(aes(xmin = `0.025quant`, xmax = `0.975quant`), 
+                # height = 0.2) +  # 95% credible intervals
+  #geom_vline(xintercept = 0, linetype = "dashed", color = "red") +  # Reference line
+  #labs(
+    #x = "Section Effect (log scale)",
+    #y = "KNP Management Section",
+    #title = "Random Effects by Park Section",
+    #subtitle = "95% Credible Intervals"
+  #) +
+  #theme_minimal()
+#section_effect_plot
 
 # INTERPRETATION:
 # - Points to the right of 0 = higher disease in that section
@@ -1551,24 +1552,29 @@ fixed_effects_mod2 <- mod2.list$log_CAA$summary.fixed
 fixed_effects_mod2$variable <- rownames(fixed_effects_mod2)
 
 variable_labels_mod2 <- data.frame(
-  variable = c("Intercept", "log.age", "SexFemale", "SexMale", "BCS.Average", "elevation", "fall.2023.NDVI", "fall.2023.LST.day.mean"),
-  label = c("Intercept", "Age [log(years)]", "Sex: Female", "Sex: Male", "Body Condition Score", "Elevation (m; standartized)", "Fall '23 NDVI (logit)", "Fall '23 Mean LST - Day (C; standardized)")
+  variable = c("Intercept", "log.age", "BCS.Average", "elevation.std", "fall.23.EVI.std", "spring.22.EVI.std"),
+  label = c("Intercept", "Age [log(years)]", "Avg. BCS", "Elevation (m)", "Fall 2023 EVI", "Spring 2022 EVI")
   )
 
 # Join labels to fixed effects
 fixed_effects_mod2 <- fixed_effects_mod2 %>%
   left_join(variable_labels_mod2, by = "variable") %>%
-  mutate(display_label = ifelse(is.na(label), variable, label))
+  mutate(display_label = ifelse(is.na(label), variable, label)) %>%
+  mutate(display_label = factor(
+    display_label,
+    levels = c(
+      "Intercept", "Age [log(years)]", "Avg. BCS", "Elevation (m)", "Fall 2023 EVI", "Spring 2022 EVI")
+  ))
 
 # Create caterpillar plot
-caterpillar_plot_mod2 <- ggplot(fixed_effects_mod2, aes(x = mean, y = reorder(display_label, mean))) +
+caterpillar_plot_mod2 <- ggplot(fixed_effects_mod2, aes(x = mean, y = display_label)) +
   geom_point(size = 3) +
   geom_errorbarh(aes(xmin = `0.025quant`, xmax = `0.975quant`), height = 0.2) +
   geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
   labs(
-    title = "Demographic and Environmental Effects on Schisto Burden",
-    x = "Effect Size (95% Credible Interval)",
-    y = "Covariates"
+    title = "Model 2: Demographic & Environmental Effects on Schisto Burden",
+    x = "95% Credible Interval",
+    y = "Fixed Effects"
   ) +
   theme_classic() +
   theme(
@@ -1579,10 +1585,25 @@ caterpillar_plot_mod2 <- ggplot(fixed_effects_mod2, aes(x = mean, y = reorder(di
 
 print(caterpillar_plot_mod2)
 
+### NOTE: The alluvial soil type ONLY HAS 1 OBSERVATION, so INLA is dropping it internally since it can't use it in the regression analysis.
+# Can consider including soil type as a random effect in this model
+
 # Save the plot
 #ggsave(file.path(file_path, "figures", 
                  #paste0("caterpillar_mod2_", "demographics_and_env", ".png")),
        #caterpillar_plot_mod2, width = 8, height = 6, dpi = 300)
+
+# ----- Computing Posterior Probabilities ----- #
+# Taking each covariate and computing the posterior probability that the coefficient is NOT 0
+post_prob_mod2 <- lapply(mod2.list, function(m) {
+  sapply(names(m$marginals.fixed), function(nm) {
+    1 - inla.pmarginal(0, m$marginals.fixed[[nm]])
+    })
+  })
+print(post_prob_mod2)
+
+# NOTE: change the filename for different model runs if you change covariates
+#write.csv(post_prob_mod2, file.path(file_path, "inla.model", "post_prob", "mod2_evi_nosex_noLST.csv"))
 
 
 # ===== MODEL COMPARISON NOTES =====
@@ -1600,17 +1621,31 @@ print(caterpillar_plot_mod2)
 ## ===== END MODEL 2 =====
 ```
 
-Both models ran, which is great!
+**As of 2/17:**
+Including park section as a random effect only improves DIC and WAIC by ~0.5, so it's not helpful and can be removed from the model.
+Unfortunately, at this time including the environmental covariates *increases* our DIC by 1 compared to model 1.
+DIC for the model including LST day but **not** NDVI is 523.1235; DIC for the model including NDVI but **not** LST day is 521.3724.
 
-As of now (2.1), model 2 has a DIC/WAIC of ~518, while model 1 has a DIC/WAIC of 522. Model 2's DIC is lower by 42 units, meaning that the environmental covariates and/or the random effect *could* improve model fit. 
 
 ### Model 3: Full Spatial Model With SPDE
 
 This model is a mixed-effects model and includes host demographics and environmental variables as fixed effects. This model also contains a spatial component and serves to fit models with continuous spatial random effects using INLA-SPDE. This is the most complex model of our model sets, capturing spatial autocorrelation patterns across KNP. This allows disease burden to vary smoothly across the park. The full equation is given by:
 
-y ~ -1 + Intercept + SexFemale + SexMale + age.years + BCS.Average + elevation + fall.2023.NDVI + f(spatial.field, model=spde)
+y \~ -1 + Intercept + SexFemale + SexMale + age.years + BCS.Average + elevation + fall.2023.NDVI + f(spatial.field, model=spde)
 
-Before running the spatial model, it's good to check that the mesh works. This is an example from Henri of how the 'my_mesh_function' constructs the mesh, and how he saves it to the wd. Notice that as the triangles approach the KNP boundary, they get smaller. 
+Here is a code chunk aiming to use INLA's `meshbuilder()` function to see how changes in priors, edges, and cutoff values affect the mesh, and what might fit best with this data. This function opens a `Shiny()` app, creating a new window in which you can work interactively to change the mesh, without writing any code. After you're happy with the mesh, you can copy the code over into the body of the .Rmd file.
+
+```{r mesh-builder}
+library(shiny)
+
+#extracting buffalo locations
+mesh.loc <- my_location_function(DT = schisto_spatial_df, LOCUTM = TRUE)
+
+# Launch meshbuilder  - it opens the new window that lets you select your spatial elements individually
+meshbuilder()
+```
+
+Before running the spatial model, it's good to check that the mesh works. This is an example from Henri of how the 'my_mesh_function' constructs the mesh, and how he saves it to the wd. Notice that as the triangles approach the KNP boundary, they get smaller.
 
 ```{r example_mesh}
 #Mesh list
@@ -1831,7 +1866,18 @@ for(xna in 1:length(which(is.na(mod3.dic.list)))){
 
 mod3.dic.list <- do.call(rbind, mod3.dic.list)
 # Optional: Save DIC
-# write.csv(mod3.dic.list, file.path(file_path, "inla.model", "dic", "mod3_dic.csv"))
+write.csv(mod3.dic.list, file.path(file_path, "inla.model", "dic", "mod3_dic.csv"))
+
+# ----- Computing Posterior Probabilities ----- #
+post_prob_mod3 <- lapply(mod3.list, function(m) {
+  sapply(names(m$marginals.fixed), function(nm) {
+    1 - inla.pmarginal(0, m$marginals.fixed[[nm]])
+    })
+  })
+print(post_prob_mod3)
+
+# NOTE: change the filename for different model runs if you change covariates
+write.csv(post_prob_mod3, file.path(file_path, "inla.model", "post_prob", "mod3_evi_nosex_noLST.csv"))
 
 # ----- Extract Model Characteristics -----
 
@@ -1842,6 +1888,8 @@ n.samp <-
               length(mod3.list[[i]]$residuals$deviance.residuals)
             })))
 
+# 129
+
 # Number of unique individuals (random effect levels)
 n.ind <-
   c(do.call(cbind,
@@ -1849,46 +1897,54 @@ n.ind <-
               mod3.list[[i]]$size.random[[1]]$n
             })))
 
-# ----- Extract Spatial Range Parameter (ρ) -----
+# 2422
+
+# ----- Extract Spatial Range Parameter (ρ) and precision (inverse variance) of the spatial field -----
 # Rho quantifies spatial autocorrelation strength
-# Higher rho = stronger spatial dependence
-rho <-
-  round(
-    c(do.call(cbind,
-              lapply(1:length(mod3.list), function(i){
-                mod3.list[[i]]$summary.hyperpar["GroupRho for spatial.field","mean"]
-              }))),2)
+# Here we are extracting the posterior mean and 95% CI for rho
+# INLA takes precision and reports the standard deviation
+# We want the sigma squared - aka the "marginal variance" of the spatial field
+# σ² tells you how much variation in your response is explained by spatial structure, after accounting for all fixed effects
+# σ² also is on the same scale as the response variable -  so for schisto, we will need to back-transform
 
-rho.025 <-
-  round(
-    c(do.call(cbind,
-              lapply(1:length(mod3.list), function(i){
-                mod3.list[[i]]$summary.hyperpar["GroupRho for spatial.field","0.025quant"]
-              }))),2)
+# Initialize empty lists to store results
+rho_list <- list()
+sigma2_list <- list()
 
-rho.975 <-
-  round(
-    c(do.call(cbind,
-              lapply(1:length(mod3.list), function(i){
-                mod3.list[[i]]$summary.hyperpar["GroupRho for spatial.field","0.975quant"]
-              }))),2)
-
-# Format as "mean (95% CI)"
-rho2 <- paste0(rho," (",rho.025,",",rho.975,")")
-
-# ----- Create Summary Table -----
-mod3.parameters <-
-  data.frame(
-    n.samp = n.samp,      # Sample size
-    n.ind = n.ind,        # Number of individuals
-    rho = rho,            # Spatial correlation parameter
-    rho.025 = rho.025,    # Lower 95% CI
-    rho.975 = rho.975,    # Upper 95% CI
-    rho2 = rho2           # Formatted string
+# Loop over models
+for(i in seq_along(mod3.list)) {
+  hyper <- mod3.list[[i]]$summary.hyperpar
+  
+  # Spatial range
+  rho_list[[i]] <- c(
+    mean = hyper["Range for spatial.field", "mean"],
+    lower = hyper["Range for spatial.field", "0.025quant"],
+    upper = hyper["Range for spatial.field", "0.975quant"]
   )
 
-#write.csv(mod3.parameters, file.path(file_path,"inla.model","dic","mod_table_values.csv"))
-#rm(mod3.parameters, rho2, rho.975, rho.025, n.ind, n.samp, mod3.dic.list); gc()
+# Spatial variance (square of standard deviation)
+  sigma2_list[[i]] <- c(
+    mean = hyper["Stdev for spatial.field", "mean"]^2,
+    lower = hyper["Stdev for spatial.field", "0.025quant"]^2,
+    upper = hyper["Stdev for spatial.field", "0.975quant"]^2
+  )
+}
+
+# Combine into data frames
+rho_df <- do.call(rbind, rho_list)
+sigma2_df <- do.call(rbind, sigma2_list)
+
+# Add model IDs
+rho_df <- data.frame(model = seq_along(mod3.list), rho_df)
+sigma2_df <- data.frame(model = seq_along(mod3.list), sigma2_df)
+
+# Optional: round for readability
+rho_df[, -1] <- round(rho_df[, -1], 2)
+sigma2_df[, -1] <- round(sigma2_df[, -1], 4)
+
+# View results
+rho_df
+sigma2_df
 
 # ===== EXTRACT MODEL SUMMARIES =====
 
@@ -2039,4 +2095,8 @@ cat("All done !!!")
 ## ===== END MODEL 3 =====
 ```
 
-Last edit (2.13) was to transform covariates, add in mean daytime LST, run all 3 models, and change the binning for the hotspot map to bin to the nearest 0.001 instead of 0.01.
+As of 2/17:
+Model 3 does not have a significant improvement in DIC - is only 523.3577
+The 95% CI for σ² (0.0039 – 1.447) translates to SD ≈ 0.062 – 1.203 → 
+
+exp(0.062) ≈ 1.06, exp(1.203) ≈ 3.33 - So depending on uncertainty, the spatial effect could be very weak (~6% difference) or very strong (~3.3× difference) on the original scale.
